@@ -14,7 +14,7 @@ that apply to any AI session helping on this repo:
 - Never create or edit a file without explicit permission for that specific action.
   Permission from earlier in a conversation does not carry forward automatically.
 - No code blocks in chat unless explicitly asked for.
-- Before writing code, check that I understand the underlying concept — ask me to
+- Before writing code, check that I understand the underlying concept first - ask me to
   explain it first. Guide me to the answer, don't hand it over, unless I've genuinely
   gotten stuck after real attempts (then it's fine to just give it directly).
 - Point me at the problem, not the solution. Ask what I think should be done. Refer
@@ -23,7 +23,7 @@ that apply to any AI session helping on this repo:
   PDF requirement.
 - Suggest tests rather than running/validating my code for me, unless asked directly.
 - When referencing code, cite file name + function/class name + line number.
-- Direct and succinct — no padding, no over-explaining.
+- Direct and succinct - no padding, no over-explaining.
 
 ## Team split
 
@@ -59,7 +59,7 @@ Verified against the actual `42Paris/minilibx-linux` source (`mlx.h`):
 - Text rendering (for HUD) will need its own equivalence check when it comes up —
   `mlx_string_put`/`mlx_set_font` exist, so pygame's font module should be fine, but
   verify the specific functions used.
-- Unresolved risk, not settled in this session: whether the equivalence rule scopes to
+- Unresolved risk, not settled yet: whether the equivalence rule scopes to
   "the whole pygame library since it's your chosen graphical library" (stricter reading,
   which I lean toward) or something narrower. **Get this confirmed with 42 staff** —
   it's ambiguous enough to matter at defense.
@@ -86,7 +86,7 @@ Key properties:
 - `.shortest_path`: BFS path entry→exit as a string of N/E/S/W letters, or `False` if
   no path found.
 
-Gotchas discovered this session:
+Gotchas discovered:
 - The "42" logo pattern is 5 rows × 7 cols, and only gets placed if
   `height >= 10 and width >= 14` (the fit-check doubles each pattern dimension).
   Below that, `MazeGenerator` just prints a warning and skips it — no crash.
@@ -113,12 +113,18 @@ pacman/
 ├── installation/
 │   └── mazegenerator-2.1.0-py3-none-any.whl   (vendored, committed)
 ├── rendering/
-│   ├── __init__.py        # re-exports RenderSettings, UI_state, FrameBuffer
+│   ├── __init__.py        # re-exports Visualizer — other exports pending re-decision,
+│   │                       # see visualizer.py notes below
 │   ├── settings.py        # RenderSettings (frozen) + UI_state (mutable) dataclasses
-│   ├── frame_buffer.py    # FrameBuffer class — DONE, functional, flake8+mypy clean
-│   ├── map_rendering.py   # MapRenderer class — partially wired, NOT finished
-│   └── sprite_rendering.py# SpriteRenderer class — ported, NOT wired at all
-├── main.py                # TEMPORARY wiring/test entry point, will move into Engine
+│   ├── frame_buffer.py    # FrameBuffer class — DONE, flake8+mypy clean except one
+│   │                       # open None-safety gap, see below
+│   ├── map_rendering.py   # MapRenderer class — DONE for now (renders static maze
+│   │                       # walls + "42" logo)
+│   ├── sprite_rendering.py# SpriteRenderer class — ported, NOT wired at all
+│   └── visualizer.py      # NEW — orchestrates FrameBuffer/MapRenderer (SpriteRenderer
+│                           # not yet added), owns the pygame window + render_frame()
+├── main.py                # TEMPORARY wiring/test entry point — now just constructs
+│                           # Visualizer + runs the game loop; will move into Engine
 ├── pyproject.toml
 └── uv.lock
 ```
@@ -133,87 +139,148 @@ RenderSettings (frozen dataclass): padding=10, cell_size=10, target_fps=30,
     top_hud_height=40, btm_hud_height=40
 UI_state (mutable dataclass): wall_color, logo42_color, animate_sprite, show_sprite
 ```
-Both are meant to be constructed **once** (currently in `main()`, eventually by
-`Engine`) and the *same instance* passed into `FrameBuffer`/`MapRenderer`/
-`SpriteRenderer` constructors — single source of truth for shared values like
-`cell_size`, not duplicated per class. `path_color`/`show_path` were deliberately
-removed from `UI_state` after `draw_path` was dropped (see below).
+Both are meant to be constructed **once** — currently inside `Visualizer.__init__` — and
+the *same instance* passed into `FrameBuffer`/`MapRenderer`/`SpriteRenderer`
+constructors — single source of truth for shared values like `cell_size`, not
+duplicated per class.
 
-Design pattern: `rendering/__init__.py` re-exports these (and `FrameBuffer`) so
-*external* code (`main.py`, future `Engine`) does `from rendering import X`. Sibling
-modules *inside* the `rendering` package (e.g. `map_rendering.py` importing
-`UI_state`) should import directly from `.settings`, not round-trip through
-`__init__.py`.
+Design pattern: `rendering/__init__.py` re-exports what *external* code (`main.py`,
+future `Engine`) needs. Sibling modules *inside* the `rendering` package (e.g.
+`map_rendering.py` importing `UI_state`) should import directly from `.settings`, not
+round-trip through `__init__.py`.
 
-### `rendering/frame_buffer.py` — done for now, verified clean
+### `rendering/frame_buffer.py` — done for now, one open risk
 `FrameBuffer(dimensions: tuple[int,int], rend_settings: RenderSettings)`:
 - Computes its own pixel size from `dimensions` (grid width/height in cells) and
-  `rend_settings.cell_size`/`padding`, creates its own `pygame.Surface(..., 
-  pygame.SRCALPHA, 32)` — **FrameBuffer owns Surface creation itself** (decided
-  deliberately: keeps pygame-buffer-format knowledge encapsulated, so `Engine` never
-  needs to know how pixels are stored, just calls `frame_buffer.blit_to_window(screen)`).
-- `self.data = memoryview(self.surf.get_buffer())` needs
-  `# type: ignore[arg-type]` — verified real mypy limitation (pygame's `BufferProxy`
-  stub doesn't declare the buffer protocol even though it works fine at runtime), not
-  a bug. Confirmed no cleaner alternative exists (tried `cast`, checked for a
-  `pygame-stubs` package — neither helps).
-- `self.size_line = self.surf.get_pitch()` — real row byte-stride, replaces an earlier
-  broken hardcoded placeholder.
+  `rend_settings.cell_size`/`padding`, creates its own `pygame.Surface(...,
+  pygame.SRCALPHA, 32)` — FrameBuffer owns Surface creation itself.
+- `_put_pixel`, `_cell_to_pixel`, `_draw_horizontal_line`/`_draw_vertical_line` were
+  **made public this session** (`draw_horizontal_line`, `draw_vertical_line`,
+  `cell_to_pixel`, `fill_cell` — no leading underscore) — deliberate, so `MapRenderer`/
+  `SpriteRenderer` can call them from outside the class.
+- **Buffer locking, reworked this session**: `self.data` used to be set once in
+  `__init__` and held for the object's whole lifetime as `memoryview(self.surf.get_buffer())`.
+  This kept the surface permanently locked, which crashes `blit_to_window` with
+  `pygame.error: Surfaces must not be locked during blit`, since pygame refuses to blit
+  a surface while something still holds direct buffer access to it. Fix: `self.data` is
+  now typed `memoryview | None`, defaulting to `None`. Two new methods:
+  - `lock_memview()` — sets `self.data = memoryview(self.surf.get_buffer())`.
+  - `unlock_memview()` — calls `self.data.release()` (reassigning `self.data = None`
+    alone does *not* release the underlying buffer/lock — the `memoryview` needs its
+    own explicit `.release()`), then sets `self.data = None`.
+  Lock/unlock happens **once per frame total**, not once per shape or sprite — walls,
+  the logo, and (eventually) every sprite all write into the same `self.surf`, so there
+  is only one lock cycle per frame regardless of how many things get drawn during it.
+  This fix has not yet been re-confirmed by an actual rerun.
+- **Open risk, not yet resolved**: `self.data` being `memoryview | None` means
+  `_put_pixel` (and anything else indexing into `self.data`) needs an explicit
+  None-check/narrowing, or mypy's None-safety checking will flag it — independent of
+  the PDF's specific required flags. Not yet verified this session.
+- `self.size_line = self.surf.get_pitch()` — real row byte-stride.
 - Byte order verified empirically for 32-bit `SRCALPHA` pygame surfaces on
-  little-endian: Blue, Green, Red, Alpha in memory — same order the old MLX code
-  assumed, so that part of the ported code needed no changes.
-- `_put_pixel`, `_cell_to_pixel`, `_draw_horizontal_line`/`_draw_vertical_line` (take
-  `color` as an explicit required-with-default param, not read from `UI_state` —
-  keeps `FrameBuffer` fully generic/decoupled from "what a wall is"), `clear_map`,
-  `_fill_cell`, `blit_to_window(win_surf)` (centers the maze surface in the window,
-  accounting for `top_hud_height`/`btm_hud_height` reserved bands).
-- Passes flake8 and `mypy --warn-return-any --warn-unused-ignores
-  --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs` (the PDF's
-  exact required lint flags) with zero issues.
+  little-endian: Blue, Green, Red, Alpha in memory.
+- `blit_to_window(win_surf)` centers the maze surface in the window, accounting for
+  `top_hud_height`/`btm_hud_height` reserved bands.
+- Passes flake8 and the PDF's exact required mypy flags with zero issues — **except**
+  the None-safety gap above, not yet checked/fixed.
 
-### `rendering/map_rendering.py` — in progress, not finished
-`MapRenderer(maze, start)` — constructor now correctly holds maze data (this belongs
-here, not on `FrameBuffer` — that was a mistake caught and fixed earlier in the
-session). **Still missing**: no `FrameBuffer` reference, no `RenderSettings`/`UI_state`
-reference. All of `_draw_cell`, `render_grid`, `_fill_logo42` still call
-`self._draw_horizontal_line`/`self._draw_vertical_line`/`self._cell_to_pixel`/
-`self.cell_size` as if `MapRenderer` had them itself — these need to route through an
-injected `FrameBuffer` instance instead, and `cell_size` needs to come from an injected
-`RenderSettings` instance (not a bare `self.cell_size`).
+### `rendering/map_rendering.py` — done for now
+`MapRenderer(maze, frame_buffer, render_setting, ui_state)` — `start` parameter (used
+in an earlier draft) was dropped entirely; unused.
 
-`render_grid`'s calls to `_fill_logo42` and dead references to the since-deleted
-`draw_path`/`_fill_start_cell`/`_fill_end_cell` are still commented out — need
-reactivating (for `_fill_logo42`, which was kept) and cleaning up (for the deleted
-ones, which shouldn't be referenced at all anymore).
+Bugs found & fixed this session:
+- `get_42_cells` looped `range(self.maze)` / `range(self.maze[0])` — ranging over a
+  list, not an int. Fixed to `range(len(self.maze))` / `range(len(self.maze[0]))`.
+- Coordinate order bug: `get_42_cells` appended `(c, r)`, but `_fill_logo42` unpacks
+  `for r, c in self.ft_cells` and calls `frame_buff.fill_cell(r, c, ...)` —
+  inconsistent with `render_grid`'s own `(row, col)` convention into
+  `cell_to_pixel(r, c)`. Fixed: `get_42_cells` now appends `(r, c)` consistently.
+- `_fill_logo42(self, color)` was being called from `render_grid` with no argument.
+  Fixed — now called with `self.ui.logo42_color`.
+- `update_grid` wasn't updating what `render_grid`/`_fill_logo42` actually read (it set
+  `self._grid`/`self._fixed_cells`, but those methods read `self.maze`/`self.ft_cells`).
+  Fixed to assign `self.maze = grid` / `self.ft_cells = fixed_cells` directly. Also
+  fixed a type mismatch — `fixed_cells` is now typed `list[tuple[int, int]]` to match
+  `self.ft_cells`'s declared type (was previously `set[tuple[int, int]]`).
+- `UI_state` now injected (`ui_state: UI_state` constructor param, stored as `self.ui`)
+  and actually used: `_draw_cell` passes `self.ui.wall_color` into
+  `draw_horizontal_line`/`draw_vertical_line`; `_fill_logo42` is called with
+  `self.ui.logo42_color`.
+- Leftover dead line `self.rend_sett.cell_size` (no assignment, no use) removed from
+  `__init__`.
 
-`draw_path`, `_fill_end_cell`, `_fill_start_cell` were **deliberately removed** —
-ported from the old MLX project but don't apply to Pac-Man: there's no meaningful
-"reach the exit" concept in actual gameplay (you win by eating pacgums), so
-visualizing the entry→exit `shortest_path` or marking the exit cell isn't relevant.
-`_fill_logo42` was kept (decorative, optional — my call to actually wire it up later).
+`draw_path`, `_fill_end_cell`, `_fill_start_cell` remain deliberately removed — no
+meaningful "reach the exit" concept in actual Pac-Man gameplay. `_fill_logo42` was kept
+(decorative, optional) and is now wired up.
 
 ### `rendering/sprite_rendering.py` — ported, not wired at all
-`SpriteRenderer` has `SPRITE_OFFSET_X`/`SPRITE_OFFSET_Y` (= 8, 7 — tuned to the *old*
-project's sprite, will need re-tuning for real pacman/ghost sprite assets),
-`set_sprite`, `draw_sprite` (alpha-blending pixel loop, ported verbatim). Reaches
-directly into buffer internals (`self._data`, `self._size_line`, `self._image_width`,
-`self._image_height`, `self._cell_to_pixel`) rather than composing a `FrameBuffer` —
-not yet decided whether to keep direct internal access (matches old perf-motivated
-design) or go through `FrameBuffer`'s public interface instead. Only supports one
-sprite at a time currently — will need extending for simultaneous sprites (pacman + 4
-ghosts + many pacgums on screen at once).
+Unchanged this session. `SpriteRenderer` has `SPRITE_OFFSET_X`/`SPRITE_OFFSET_Y` (= 8, 7
+— tuned to the *old* project's sprite, will need re-tuning), `set_sprite`, `draw_sprite`
+(alpha-blending pixel loop, ported verbatim). Reaches directly into buffer internals
+(`self._data`, `self._size_line`, `self._image_width`, `self._image_height`,
+`self._cell_to_pixel`) rather than composing a `FrameBuffer` — not yet decided whether
+to keep direct internal access or go through `FrameBuffer`'s public interface. Only
+supports one sprite at a time currently — will need extending for simultaneous sprites
+(pacman + 4 ghosts + many pacgums on screen at once). Not yet constructed or called by
+`Visualizer`.
 
-### `main.py` — temporary only
-Explicitly a throwaway wiring/test spot, not final structure. Currently: constructs
-`MazeGenerator`, `UI_state`, `RenderSettings`, computes `maze_w`/`maze_h`, constructs
-`FrameBuffer`. Will move into `Engine` once that exists.
+### `rendering/visualizer.py` — NEW this session
+Design principle decided this session, **"Engine should be dumb"** — modeled on a prior
+(non-42) project where `Engine` contained zero rendering code and only ever called a
+couple of public methods on one `Visualizer`-type object, which centralized all
+rendering wiring/complexity internally. Applying the same principle here: once `Engine`
+exists, it should never construct or hold direct references to `FrameBuffer`,
+`MapRenderer`, or `SpriteRenderer` — `Visualizer` is the single point of contact.
 
-### `Engine` — does not exist yet
-Whoever/whatever this ends up being needs to: create the actual game window
-(`pygame.display.set_mode`, sized for grid + both HUD bands), own the main game loop,
-construct `RenderSettings`/`UI_state` once and inject the same instances into
-`FrameBuffer`/`MapRenderer`/`SpriteRenderer`, own `Controls`, and take over
-`MazeGenerator` construction from `main.py`.
+Current `Visualizer(start, maze)`:
+- Constructs `RenderSettings`, `UI_state`, `FrameBuffer`, `MapRenderer` internally.
+  `SpriteRenderer` construction not yet added.
+- `start` parameter is a placeholder for pacman's spawn point, not yet used anywhere.
+- Owns `pygame.init()`, window caption, and the actual game window
+  (`pygame.display.set_mode`, sized to 70% of the detected display's width/height via
+  `pygame.display.Info()`).
+- Owns `self.clock` (`pygame.time.Clock()`) and `self.running` (`bool`, always `True`
+  on construction; currently only ever set `False` by a `QUIT` event inside
+  `render_frame`).
+- `render_frame()`: polls `pygame.event.get()` for `QUIT` (sets `self.running = False`);
+  calls `self.frame_buff.lock_memview()`; calls `self.map_rend.render_grid()`; calls
+  `self.frame_buff.unlock_memview()`; calls `self.frame_buff.blit_to_window(self.screen)`;
+  calls `pygame.display.flip()`.
+
+Open questions, not resolved yet:
+- `rendering/__init__.py` currently re-exports `RenderSettings`/`UI_state`/
+  `FrameBuffer`/`MapRenderer` for external code — now that `Visualizer` is meant to be
+  the only thing `Engine`/`main.py` touches, should the package's public exports shrink
+  to just `Visualizer`?
+- `SpriteRenderer` isn't constructed or called anywhere in `Visualizer` yet — needs
+  adding once its `FrameBuffer`-composition question (above) is settled. The lock/draw/
+  unlock pattern in `render_frame()` will need to wrap sprite draws too, within the same
+  single per-frame lock cycle as the map.
+
+### `main.py` — temporary only, simplified this session
+Now: constructs `MazeGenerator`, pulls `maze`/`start`, constructs
+`Visualizer(start, maze)`, then `while vis.running: vis.clock.tick(30); vis.render_frame()`,
+then `pygame.quit()`.
+
+Removed this session: a redundant standalone `vis.render_frame()` call before the loop
+(the loop's own first iteration already calls it, so it drew nothing the loop wouldn't
+have drawn a moment later anyway).
+
+**Still present, flagged as dead code, not yet removed**: `if not vis.running: return`
+immediately after construction — `vis.running` is unconditionally `True` at that point
+(set at the end of `Visualizer.__init__` and untouched by anything else in it), so this
+check can never actually trigger there.
+
+Will still move into `Engine` once that exists — per "Engine should be dumb," `Engine`'s
+equivalent should construct and hold only `Visualizer`, not reach into `FrameBuffer`/
+`MapRenderer`/`SpriteRenderer` directly.
+
+### `Engine` — does not exist yet, design principle decided
+**"Engine should be dumb"**: owns the main game loop and (eventually) `Controls` and
+game logic, but never constructs or directly touches `FrameBuffer`, `MapRenderer`, or
+`SpriteRenderer` — constructs one `Visualizer` instance and calls its public methods
+only (e.g. `render_frame()`), the same way the prior project's `Engine` only ever called
+`wait_to_start()`/`render_frame()` on its `Visualizer`.
 
 ### `Controls` — does not exist yet
 Decided: separate module/package, must have **no knowledge of rendering** — only
@@ -230,36 +297,44 @@ bottom) rather than one unified band — this is why `RenderSettings` has
 `top_hud_height`/`btm_hud_height` instead of a single `hud_height`. No separate
 "heading" reserved dimension — if a title/heading is wanted later, it'll just be text
 blitted onto the top HUD surface, no extra dimension needed. **No HUD-drawing
-component exists yet at all** — reserving the pixel space is done, but nothing
-actually draws score/lives/level/time text into it yet. This will need pygame's font
-module, which needs its own MLX-equivalence check when it's built (likely fine, since
-`mlx_string_put`/`mlx_set_font` exist, but verify the actual calls used).
+component exists yet at all**. This will need pygame's font module, which needs its own
+MLX-equivalence check when it's built (likely fine, since `mlx_string_put`/
+`mlx_set_font` exist, but verify the actual calls used).
 
 ## Other build/tooling notes
 
 - `pyproject.toml` deps: `mazegenerator` (path source, see above), `pygame>=2.6.1`,
-  `pydantic>=2.13.4` (likely partner's config-parsing side — not discussed in this
-  session, confirm its role if picking this up cold).
+  `pydantic>=2.13.4` (likely partner's config-parsing side — confirm its role if
+  picking this up cold).
 - mypy note: if mypy throws `INTERNAL ERROR ... sqlite3.OperationalError: disk I/O
   error`, that's a sandbox/mounted-filesystem quirk with mypy's cache DB, not a real
   code issue — rerun with `--cache-dir` pointed at a normal local path.
 - Makefile, `.gitignore`, config file (JSON with comments), highscore system, cheat
-  mode, packaging, README, and project-management docs: **not started at all** in this
-  session — all still outstanding per the PDF's mandatory requirements.
+  mode, packaging, README, and project-management docs: **not started at all** — all
+  still outstanding per the PDF's mandatory requirements.
 
 ## Not started / TODO (not exhaustive, just what's been surfaced so far)
 
-- Wire `MapRenderer` to compose `FrameBuffer` + hold `RenderSettings`/`UI_state`.
+- Add explicit None-guarding for `FrameBuffer.data` (typed `memoryview | None`)
+  wherever it's indexed, to satisfy mypy's None-safety checks.
+- Confirm the `blit`-lock fix (`lock_memview`/`unlock_memview` with explicit
+  `memoryview.release()`) actually resolves the `pygame.error` by rerunning.
+- Remove the dead `if not vis.running: return` check in `main.py`.
+- Decide `rendering/__init__.py`'s public exports now that `Visualizer` is meant to be
+  the package's single entry point.
 - Decide `SpriteRenderer`'s relationship to `FrameBuffer` (direct buffer access vs.
-  public interface) and extend it to handle multiple simultaneous sprites.
+  public interface), extend it to handle multiple simultaneous sprites, and wire it
+  into `Visualizer` (construct it there, call its draw method from `render_frame()`
+  inside the same lock/unlock cycle as the map).
 - Build `Controls` and decide the movement model.
-- Build `Engine`, move `main.py`'s temporary wiring into it, create the real window.
+- Build `Engine` (dumb — owns only a `Visualizer` instance + the loop + eventually
+  `Controls`/game logic), move `main.py`'s temporary wiring into it.
 - Decide who owns pacgum/super-pacgum/ghost-corner placement logic (not provided by
   `mazegenerator`).
 - Build the HUD-drawing component (text rendering).
 - Get the pygame/MLX-equivalence interpretation confirmed with 42 staff.
 - Fix level-1 seed once real level progression exists (currently hardcoded `seed=0`,
-  fully random, in the temporary `main.py`).
+  fully random, in `Visualizer`/`main.py`).
 - Everything else in the PDF not yet touched: config loading/validation, highscore
   system, cheat mode, scoring, ghosts, Makefile, README, project management docs,
   packaging/deployment.

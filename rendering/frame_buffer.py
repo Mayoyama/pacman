@@ -13,11 +13,10 @@ class FrameBuffer:
                        + (self.maze_h * self.rend_set.cell_size))
         self.surf = pygame.Surface((self.surf_w, self.surf_h),
                                    pygame.SRCALPHA, 32)
-        self.data = memoryview(
-            self.surf.get_buffer())  # type: ignore[arg-type]
+        self.data: memoryview | None = None
         self.size_line = self.surf.get_pitch()
 
-    def _cell_to_pixel(self, r: int, c: int) -> tuple[int, int]:
+    def cell_to_pixel(self, r: int, c: int) -> tuple[int, int]:
         """Converts a grid cell's (row, col) to its top-left pixel position.
 
         Args:
@@ -32,7 +31,7 @@ class FrameBuffer:
         y = self.rend_set.padding + (r * self.rend_set.cell_size)
         return x, y
 
-    def _put_pixel(self, x: int, y: int, color: tuple[int, int, int]) -> None:
+    def put_pixel(self, x: int, y: int, color: tuple[int, int, int]) -> None:
         """Renders pixels to the screen, based on RGBA values"""
         offset = (y * self.size_line) + (x * 4)
         self.data[offset + 0] = color[2]
@@ -40,17 +39,17 @@ class FrameBuffer:
         self.data[offset + 2] = color[0]
         self.data[offset + 3] = 255
 
-    def _draw_horizontal_line(self, x: int, y: int, length: int,
+    def draw_horizontal_line(self, x: int, y: int, length: int,
                               color: tuple[int, int, int] = (0, 0, 0)) -> None:
         """Renders a straight horizontal line to the screen"""
         for i in range(length):
-            self._put_pixel(x + i, y, color)
+            self.put_pixel(x + i, y, color)
 
-    def _draw_vertical_line(self, x: int, y: int, length: int,
+    def draw_vertical_line(self, x: int, y: int, length: int,
                             color: tuple[int, int, int] = (0, 0, 0)) -> None:
         """Renders a straight vertical line to the screen"""
         for i in range(length):
-            self._put_pixel(x, y + i, color)
+            self.put_pixel(x, y + i, color)
 
     def clear_map(self) -> None:
         """Fills the entire image buffer with black, erasing any
@@ -58,17 +57,17 @@ class FrameBuffer:
         """
         for y in range(self.surf_h):
             for x in range(self.surf_w):
-                self._put_pixel(x, y, (0, 0, 0))
+                self.put_pixel(x, y, (0, 0, 0))
 
-    def _fill_cell(self, r: int, c: int, color: tuple[int, int, int]) -> None:
+    def fill_cell(self, r: int, c: int, color: tuple[int, int, int]) -> None:
         """
         Loops to fill in every pixel within a cell. Requires RGB to
         be passed in
         """
-        x, y = self._cell_to_pixel(r, c)
+        x, y = self.cell_to_pixel(r, c)
         for r_offset in range(1, self.rend_set.cell_size - 1):
             for c_offset in range(1, self.rend_set.cell_size - 1):
-                self._put_pixel(x + c_offset, y + r_offset, color)
+                self.put_pixel(x + c_offset, y + r_offset, color)
 
     def blit_to_window(self, win_surf: pygame.Surface) -> None:
         avail_height = (win_surf.get_height() - self.rend_set.top_hud_height
@@ -78,3 +77,10 @@ class FrameBuffer:
                                 + (avail_height // 2))
         surf_loc = self.surf.get_rect(center=mid)
         win_surf.blit(self.surf, surf_loc)
+
+    def lock_memview(self) -> None:
+            self.data = memoryview(
+                        self.surf.get_buffer())  # type: ignore[arg-type]
+    def unlock_memview(self) -> None:
+            self.data.release()
+            self.data = None
