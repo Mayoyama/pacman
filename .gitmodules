@@ -1,0 +1,3 @@
+[submodule "pacman-notes"]
+	path = pacman-notes
+	url = git@github.com:Mayoyama/pacman-notes.git
