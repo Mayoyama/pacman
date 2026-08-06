@@ -5,10 +5,8 @@ from dataclasses import dataclass
 class RenderSettings:
     """
     Stores and freezes rendering configuration values such as window
-    dimensions and maze cell size.
+    dimensions and target fps.
     """
-    padding: int = 10
-    cell_size: int = 10
     target_fps: int = 30
     top_hud_height: int = 40
     btm_hud_height: int = 40

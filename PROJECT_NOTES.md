@@ -30,12 +30,34 @@ that apply to any AI session helping on this repo:
 Two-person group.
 
 - **Partner**: config parsing, game mechanics/algorithms (exact scope of "game
-  mechanics" not fully clarified in this session — likely ghost AI, scoring, level
-  progression logic; confirm if unsure).
-- **Me (this repo's rendering side)**: pygame-based visual rendering and controls.
+  mechanics" not fully clarified — likely ghost AI, scoring, level progression logic;
+  confirm if unsure).
+- **Me**: everything pygame-related — rendering, controls, and player movement.
+  Lives/invincibility currently live on a `Player` class here too, but that's flagged as
+  likely to be adjusted once the partner's game-mechanics/scoring logic is settled (see
+  `player/player.py` below).
 
 Neither of us wrote the maze generator — it's an externally assigned package (see
 below), used as-is per PDF rules.
+
+## Architecture principle: package self-containment
+
+Standing rule, applies project-wide, not just to one file: **packages should not import
+from each other.** `player/` and `rendering/` are meant to be blind, independent of one
+another. This has driven several concrete decisions below, listed here once instead of
+repeated per-section:
+
+- Small pieces of logic needed by more than one package (e.g. cell↔pixel math, wall-bit
+  checks) are **duplicated** locally in each package rather than imported from wherever
+  they were first written. Accepted trade-off: a few lines of duplicated logic is
+  preferable to a cross-package import.
+- Shared *values* (not types) are constructed once, in `main.py`, and passed down as
+  plain primitives (ints, tuples) — never as a shared custom class that both packages
+  would need to import for typing purposes. See `PixelMath` below for the concrete
+  case and the type-safety trade-off this implies.
+- The one-way exception is `main.py`/the future `Engine`: it's allowed to import from
+  both `player` and `rendering`, since it's the wiring layer sitting above both, not a
+  peer package.
 
 ## Critical constraint: pygame vs MLX equivalence
 
@@ -50,12 +72,16 @@ Verified against the actual `42Paris/minilibx-linux` source (`mlx.h`):
   (bitmap text), xpm/png image loading, and event hooks (`mlx_key_hook`,
   `mlx_mouse_hook`, `mlx_loop_hook`, `mlx_hook`), plus a few utility calls
   (`mlx_get_screen_size`, mouse show/hide/move, key autorepeat toggle).
-- Conclusion: manual pixel-by-pixel line drawing (looping `_put_pixel`) is correct and
+- Conclusion: manual pixel-by-pixel line drawing (looping `put_pixel`) is correct and
   required — this is what real MLX-based projects do too, not a workaround.
-- Movement/input: `pygame.event.get()` + tracking `KEYDOWN`/`KEYUP` into your own
-  "held keys" dict, checked once per frame, maps cleanly to `mlx_key_hook` +
-  `mlx_loop_hook`. **`pygame.key.get_pressed()` should be avoided** — it's a full
-  keyboard-state snapshot with no MLX equivalent at all.
+- Movement/input, resolved: `pygame.event.get()` + checking `KEYDOWN` events directly,
+  once per frame — maps cleanly to `mlx_key_hook` + `mlx_loop_hook`.
+  **`pygame.key.get_pressed()` should be avoided** — it's a full keyboard-state
+  snapshot with no MLX equivalent at all. Turned out a persistent "held keys" dict
+  isn't actually needed: the chosen movement style (see `player/movement.py` below)
+  only ever needs "what was the last direction requested," a single discrete event,
+  not continuous held-key state — simpler than originally anticipated, still
+  event-based.
 - Text rendering (for HUD) will need its own equivalence check when it comes up —
   `mlx_string_put`/`mlx_set_font` exist, so pygame's font module should be fine, but
   verify the specific functions used.
@@ -112,183 +138,225 @@ Gotchas discovered:
 pacman/
 ├── installation/
 │   └── mazegenerator-2.1.0-py3-none-any.whl   (vendored, committed)
+├── player/
+│   ├── __init__.py
+│   ├── movement.py        # Direction enum + Movement class — DONE (see below)
+│   ├── controls.py        # check_keypress() function — DONE (see below)
+│   └── player.py          # Player class — DONE (see below)
 ├── rendering/
-│   ├── __init__.py        # re-exports Visualizer — other exports pending re-decision,
-│   │                       # see visualizer.py notes below
+│   ├── __init__.py        # re-exports Visualizer only
 │   ├── settings.py        # RenderSettings (frozen) + UI_state (mutable) dataclasses
-│   ├── frame_buffer.py    # FrameBuffer class — DONE, flake8+mypy clean except one
-│   │                       # open None-safety gap, see below
-│   ├── map_rendering.py   # MapRenderer class — DONE for now (renders static maze
-│   │                       # walls + "42" logo)
+│   ├── frame_buffer.py    # FrameBuffer class — DONE
+│   ├── map_rendering.py   # MapRenderer class — DONE for now
 │   ├── sprite_rendering.py# SpriteRenderer class — ported, NOT wired at all
-│   └── visualizer.py      # NEW — orchestrates FrameBuffer/MapRenderer (SpriteRenderer
-│                           # not yet added), owns the pygame window + render_frame()
-├── main.py                # TEMPORARY wiring/test entry point — now just constructs
-│                           # Visualizer + runs the game loop; will move into Engine
+│   └── visualizer.py      # orchestrates FrameBuffer/MapRenderer, owns the pygame
+│                           # window + game-loop-facing methods
+├── main.py                # TEMPORARY wiring/test entry point (see below); will move
+│                           # into Engine
 ├── pyproject.toml
 └── uv.lock
 ```
 
-No `Controls` module and no `Engine` module exist yet as files.
+No `Engine` module exists yet as a file.
 
 ## Component status
 
 ### `rendering/settings.py` — done for now
 ```
-RenderSettings (frozen dataclass): padding=10, cell_size=10, target_fps=30,
-    top_hud_height=40, btm_hud_height=40
+RenderSettings (frozen dataclass): target_fps=30, top_hud_height=40, btm_hud_height=40
 UI_state (mutable dataclass): wall_color, logo42_color, animate_sprite, show_sprite
 ```
-Both are meant to be constructed **once** — currently inside `Visualizer.__init__` — and
-the *same instance* passed into `FrameBuffer`/`MapRenderer`/`SpriteRenderer`
-constructors — single source of truth for shared values like `cell_size`, not
-duplicated per class.
+`padding`/`cell_size` used to live here but were **moved out** — see `PixelMath` below.
+Reason: those two values are needed by both `rendering` and `player`, and the
+self-containment rule (above) means neither package can import a shared dataclass type
+from the other, or from a third location either, without breaking isolation. They now
+live as plain values, constructed once in `main.py`.
 
-Design pattern: `rendering/__init__.py` re-exports what *external* code (`main.py`,
-future `Engine`) needs. Sibling modules *inside* the `rendering` package (e.g.
-`map_rendering.py` importing `UI_state`) should import directly from `.settings`, not
-round-trip through `__init__.py`.
+### `main.py` — temporary, now includes `PixelMath`
+Defines:
+```python
+class PixelMath(NamedTuple):
+    cell_size: int = 20
+    padding: int = 10
+```
+Constructed once in `main()`, passed as a plain `tuple[int, int]` to `Visualizer` (which
+forwards it to `FrameBuffer`/`MapRenderer`) — single source of truth for these two
+values, fanned out as primitives so no package has to import `PixelMath` itself.
+`NamedTuple` chosen over a plain tuple literal so the definition is self-documenting and
+mypy can catch typos in the one place it's constructed, but every consumer still
+receives it as `tuple[int, int]` and unpacks it **positionally**
+(`self.cell_size, self.padding = pixel_math`), not via attribute access — attribute
+access was tried and reverted, because it requires the receiving parameter to be typed
+as the specific `PixelMath` class, which would mean importing it from `main.py` into
+`player`/`rendering`, breaking the self-containment rule. Known trade-off: mypy can't
+guarantee a plain tuple passed in some other order wouldn't type-check; accepted, since
+`main.py` is currently the only construction site.
 
-### `rendering/frame_buffer.py` — done for now, one open risk
-`FrameBuffer(dimensions: tuple[int,int], rend_settings: RenderSettings)`:
-- Computes its own pixel size from `dimensions` (grid width/height in cells) and
-  `rend_settings.cell_size`/`padding`, creates its own `pygame.Surface(...,
-  pygame.SRCALPHA, 32)` — FrameBuffer owns Surface creation itself.
-- `_put_pixel`, `_cell_to_pixel`, `_draw_horizontal_line`/`_draw_vertical_line` were
-  **made public this session** (`draw_horizontal_line`, `draw_vertical_line`,
-  `cell_to_pixel`, `fill_cell` — no leading underscore) — deliberate, so `MapRenderer`/
-  `SpriteRenderer` can call them from outside the class.
-- **Buffer locking, reworked this session**: `self.data` used to be set once in
-  `__init__` and held for the object's whole lifetime as `memoryview(self.surf.get_buffer())`.
-  This kept the surface permanently locked, which crashes `blit_to_window` with
-  `pygame.error: Surfaces must not be locked during blit`, since pygame refuses to blit
-  a surface while something still holds direct buffer access to it. Fix: `self.data` is
-  now typed `memoryview | None`, defaulting to `None`. Two new methods:
-  - `lock_memview()` — sets `self.data = memoryview(self.surf.get_buffer())`.
-  - `unlock_memview()` — calls `self.data.release()` (reassigning `self.data = None`
-    alone does *not* release the underlying buffer/lock — the `memoryview` needs its
-    own explicit `.release()`), then sets `self.data = None`.
-  Lock/unlock happens **once per frame total**, not once per shape or sprite — walls,
-  the logo, and (eventually) every sprite all write into the same `self.surf`, so there
-  is only one lock cycle per frame regardless of how many things get drawn during it.
-  This fix has not yet been re-confirmed by an actual rerun.
-- **Open risk, not yet resolved**: `self.data` being `memoryview | None` means
-  `_put_pixel` (and anything else indexing into `self.data`) needs an explicit
-  None-check/narrowing, or mypy's None-safety checking will flag it — independent of
-  the PDF's specific required flags. Not yet verified this session.
-- `self.size_line = self.surf.get_pitch()` — real row byte-stride.
-- Byte order verified empirically for 32-bit `SRCALPHA` pygame surfaces on
-  little-endian: Blue, Green, Red, Alpha in memory.
-- `blit_to_window(win_surf)` centers the maze surface in the window, accounting for
-  `top_hud_height`/`btm_hud_height` reserved bands.
-- Passes flake8 and the PDF's exact required mypy flags with zero issues — **except**
-  the None-safety gap above, not yet checked/fixed.
+Game loop now: constructs `MazeGenerator`, `PixelMath`, `Visualizer`; each frame calls
+`vis.set_tick()`, pumps `events = pygame.event.get()` **once**, passes that same list to
+`vis.handle_events(events)`, then calls `vis.render_frame()`. `pygame.quit()` after the
+loop exits.
+
+**Not yet wired here**: `Movement`, `Controls`, `Player` are not constructed or called
+anywhere in `main.py` yet, despite all three being functionally complete on their own.
+The `events` list is already available in the loop and ready to also feed
+`check_keypress(events)` once that's added.
+
+### `rendering/frame_buffer.py` — done
+`FrameBuffer(dimensions: tuple[int, int], rend_settings: RenderSettings, pixel_math:
+tuple[int, int])`. Unpacks `pixel_math` positionally into `self.cell_size`/
+`self.padding` (see self-containment note above for why). Owns its own
+`pygame.Surface(..., pygame.SRCALPHA, 32)`. Public methods: `cell_to_pixel`,
+`put_pixel`, `draw_horizontal_line`/`draw_vertical_line`, `clear_map`, `fill_cell`,
+`blit_to_window`, `lock_memview`/`unlock_memview`.
+
+Buffer locking: `self.data: memoryview | None`, defaults to `None`. `lock_memview()`
+sets it via `get_buffer()`; `unlock_memview()` calls `.release()` then sets back to
+`None` — required because pygame refuses to blit a surface while something still holds
+direct buffer access to it. `put_pixel`/`unlock_memview` both have explicit
+`if self.data is not None: ... else: raise ValueError(...)` guards for mypy's
+None-narrowing. One scoped `# type: ignore[arg-type]` on the `get_buffer()` call in
+`lock_memview` — a real mypy stub gap (`BufferProxy` vs `Buffer` protocol), verified no
+cleaner fix exists.
 
 ### `rendering/map_rendering.py` — done for now
-`MapRenderer(maze, frame_buffer, render_setting, ui_state)` — `start` parameter (used
-in an earlier draft) was dropped entirely; unused.
+`MapRenderer(maze, frame_buffer, render_setting, ui_state, pixel_math)` — also takes
+`pixel_math` now, unpacks `self.cell_size` positionally (padding not needed here).
+`get_42_cells()` scans `self.maze` for value `15` to derive logo-cell coordinates.
+`render_grid()` draws walls per-cell via the wall-bitmask checks, then fills logo cells.
 
-Bugs found & fixed this session:
-- `get_42_cells` looped `range(self.maze)` / `range(self.maze[0])` — ranging over a
-  list, not an int. Fixed to `range(len(self.maze))` / `range(len(self.maze[0]))`.
-- Coordinate order bug: `get_42_cells` appended `(c, r)`, but `_fill_logo42` unpacks
-  `for r, c in self.ft_cells` and calls `frame_buff.fill_cell(r, c, ...)` —
-  inconsistent with `render_grid`'s own `(row, col)` convention into
-  `cell_to_pixel(r, c)`. Fixed: `get_42_cells` now appends `(r, c)` consistently.
-- `_fill_logo42(self, color)` was being called from `render_grid` with no argument.
-  Fixed — now called with `self.ui.logo42_color`.
-- `update_grid` wasn't updating what `render_grid`/`_fill_logo42` actually read (it set
-  `self._grid`/`self._fixed_cells`, but those methods read `self.maze`/`self.ft_cells`).
-  Fixed to assign `self.maze = grid` / `self.ft_cells = fixed_cells` directly. Also
-  fixed a type mismatch — `fixed_cells` is now typed `list[tuple[int, int]]` to match
-  `self.ft_cells`'s declared type (was previously `set[tuple[int, int]]`).
-- `UI_state` now injected (`ui_state: UI_state` constructor param, stored as `self.ui`)
-  and actually used: `_draw_cell` passes `self.ui.wall_color` into
-  `draw_horizontal_line`/`draw_vertical_line`; `_fill_logo42` is called with
-  `self.ui.logo42_color`.
-- Leftover dead line `self.rend_sett.cell_size` (no assignment, no use) removed from
-  `__init__`.
+### `rendering/sprite_rendering.py` — ported, still not wired at all
+Unchanged. `SpriteRenderer` reaches directly into buffer internals rather than
+composing `FrameBuffer` through its public interface — not yet decided which way to go.
+Only supports one sprite at a time. Not yet constructed or called by `Visualizer`. Will
+need `Movement`'s `pixel_pos`/`direction` (or equivalent accessor methods) to know where
+to draw Pac-Man each frame — not yet connected.
 
-`draw_path`, `_fill_end_cell`, `_fill_start_cell` remain deliberately removed — no
-meaningful "reach the exit" concept in actual Pac-Man gameplay. `_fill_logo42` was kept
-(decorative, optional) and is now wired up.
+### `rendering/visualizer.py` — done for current scope
+`Visualizer(start, maze, pixel_math)`: constructs `RenderSettings`, `UI_state`,
+`FrameBuffer`, `MapRenderer` (all pass `pixel_math` through where needed); owns
+`pygame.init()`, the window, `self.clock`, `self.running`.
 
-### `rendering/sprite_rendering.py` — ported, not wired at all
-Unchanged this session. `SpriteRenderer` has `SPRITE_OFFSET_X`/`SPRITE_OFFSET_Y` (= 8, 7
-— tuned to the *old* project's sprite, will need re-tuning), `set_sprite`, `draw_sprite`
-(alpha-blending pixel loop, ported verbatim). Reaches directly into buffer internals
-(`self._data`, `self._size_line`, `self._image_width`, `self._image_height`,
-`self._cell_to_pixel`) rather than composing a `FrameBuffer` — not yet decided whether
-to keep direct internal access or go through `FrameBuffer`'s public interface. Only
-supports one sprite at a time currently — will need extending for simultaneous sprites
-(pacman + 4 ghosts + many pacgums on screen at once). Not yet constructed or called by
-`Visualizer`.
+`handle_events(events: list[pygame.event.Event])` — **new**, split out of
+`render_frame()`. Only checks for `QUIT` and sets `self.running = False`. Exists so
+`main.py` can own the single `pygame.event.get()` call per frame (pygame's event queue
+is drained by that call — only one place per frame should call it) and hand the same
+list to both `Visualizer` and, once wired in, `Controls`. Same encapsulation pattern as
+`set_tick()` — `main.py` never touches `self.running` directly.
 
-### `rendering/visualizer.py` — NEW this session
-Design principle decided this session, **"Engine should be dumb"** — modeled on a prior
-(non-42) project where `Engine` contained zero rendering code and only ever called a
-couple of public methods on one `Visualizer`-type object, which centralized all
-rendering wiring/complexity internally. Applying the same principle here: once `Engine`
-exists, it should never construct or hold direct references to `FrameBuffer`,
-`MapRenderer`, or `SpriteRenderer` — `Visualizer` is the single point of contact.
+`render_frame()` no longer pumps events itself — just locks, clears, renders the grid,
+unlocks, blits, and flips.
 
-Current `Visualizer(start, maze)`:
-- Constructs `RenderSettings`, `UI_state`, `FrameBuffer`, `MapRenderer` internally.
-  `SpriteRenderer` construction not yet added.
-- `start` parameter is a placeholder for pacman's spawn point, not yet used anywhere.
-- Owns `pygame.init()`, window caption, and the actual game window
-  (`pygame.display.set_mode`, sized to 70% of the detected display's width/height via
-  `pygame.display.Info()`).
-- Owns `self.clock` (`pygame.time.Clock()`) and `self.running` (`bool`, always `True`
-  on construction; currently only ever set `False` by a `QUIT` event inside
-  `render_frame`).
-- `render_frame()`: polls `pygame.event.get()` for `QUIT` (sets `self.running = False`);
-  calls `self.frame_buff.lock_memview()`; calls `self.map_rend.render_grid()`; calls
-  `self.frame_buff.unlock_memview()`; calls `self.frame_buff.blit_to_window(self.screen)`;
-  calls `pygame.display.flip()`.
+### `Engine` — does not exist yet
+Still just a design principle: owns the main loop, constructs one `Visualizer` and
+(eventually) `Movement`/`Controls`/`Player`, never reaches into `FrameBuffer`/
+`MapRenderer`/`SpriteRenderer` directly. `main.py`'s current event-pump-once-and-fan-out
+structure is effectively a preview of what `Engine`'s loop should look like.
 
-Open questions, not resolved yet:
-- `rendering/__init__.py` currently re-exports `RenderSettings`/`UI_state`/
-  `FrameBuffer`/`MapRenderer` for external code — now that `Visualizer` is meant to be
-  the only thing `Engine`/`main.py` touches, should the package's public exports shrink
-  to just `Visualizer`?
-- `SpriteRenderer` isn't constructed or called anywhere in `Visualizer` yet — needs
-  adding once its `FrameBuffer`-composition question (above) is settled. The lock/draw/
-  unlock pattern in `render_frame()` will need to wrap sprite draws too, within the same
-  single per-frame lock cycle as the map.
+### `player/movement.py` — done, functionally complete
+`Direction` enum: `UP`, `DOWN`, `LEFT`, `RIGHT`, `PAUSED`.
 
-### `main.py` — temporary only, simplified this session
-Now: constructs `MazeGenerator`, pulls `maze`/`start`, constructs
-`Visualizer(start, maze)`, then `while vis.running: vis.clock.tick(30); vis.render_frame()`,
-then `pygame.quit()`.
+`Movement(start: tuple[int, int], maze: list[list[int]], pixel_math: tuple[int, int])`:
+- `self.cell` — the grid cell currently being walked **toward** (not necessarily the
+  cell physically occupied mid-transit — see `update()` below).
+- `self.pixel_pos` — continuous position, initialized via `cell_center(*start)`
+  (center-based, not top-left — deliberate, see below).
+- `self.direction` / `self.buffer_dir` — direction actually moving vs. last direction
+  requested by input (buffered-input model, see Controls/MLX-equivalence above).
+- `self.speed` / `self.tolerance` — derived from `cell_size`, not fixed constants:
+  `frames_per_cell = 4; self.speed = max(1, self.cell_size // frames_per_cell)`,
+  `self.tolerance = self.speed`. The `max(1, ...)` guards against `cell_size` small
+  enough to floor-divide to zero. `frames_per_cell = 4` was picked by researching the
+  actual Pac-Man Dossier speed tables (100% speed = 75.76 px/sec at 60fps/8px tiles;
+  level 1 runs at 80% of that, ≈4 frames to cross a tile) and reproducing that same
+  time-per-cell at this project's 30fps/`cell_size`-based scale.
+- `tolerance` needs to be at least `speed`, or a given frame's movement can step clean
+  over the "centered" window without ever registering — not just an arbitrary choice.
 
-Removed this session: a redundant standalone `vis.render_frame()` call before the loop
-(the loop's own first iteration already calls it, so it drew nothing the loop wouldn't
-have drawn a moment later anyway).
+Own local copies (not imported from `rendering`, per the self-containment rule):
+`cell_to_pixel` (top-left corner, matches `FrameBuffer`'s version in meaning), plus a
+new `cell_center` (top-left + half `cell_size`, used for the actual centering/tolerance
+math — `pixel_pos`/"centered" means distance to the cell's true center, not its corner).
+Also local copies of the four `_has_N/E/S/W_wall` bit checks (bit0=N, bit1=E, bit2=S,
+bit3=W, matching `mazegenerator`'s encoding and `MapRenderer`'s versions).
 
-**Still present, flagged as dead code, not yet removed**: `if not vis.running: return`
-immediately after construction — `vis.running` is unconditionally `True` at that point
-(set at the end of `Visualizer.__init__` and untouched by anything else in it), so this
-check can never actually trigger there.
+`has_blocked_wall(direction)` — takes a `Direction` param (not hardcoded to
+`self.direction`), so it can check either the current direction or the buffered one.
+Returns `True` when a wall blocks that direction — name and boolean sense agree.
 
-Will still move into `Engine` once that exists — per "Engine should be dumb," `Engine`'s
-equivalent should construct and hold only `Visualizer`, not reach into `FrameBuffer`/
-`MapRenderer`/`SpriteRenderer` directly.
+`set_desired_direction(direction)` — buffers input, doesn't move anything itself.
 
-### `Engine` — does not exist yet, design principle decided
-**"Engine should be dumb"**: owns the main game loop and (eventually) `Controls` and
-game logic, but never constructs or directly touches `FrameBuffer`, `MapRenderer`, or
-`SpriteRenderer` — constructs one `Visualizer` instance and calls its public methods
-only (e.g. `render_frame()`), the same way the prior project's `Engine` only ever called
-`wait_to_start()`/`render_frame()` on its `Visualizer`.
+`_is_centered()` — `abs(px - cx) <= tolerance and abs(py - cy) <= tolerance` against
+`cell_center(*self.cell)`. (Must use `abs()` on both axes — an earlier draft without it
+was silently direction-dependent: correct-looking when approaching from one side,
+almost always `True` when approaching from the other.)
 
-### `Controls` — does not exist yet
-Decided: separate module/package, must have **no knowledge of rendering** — only
-translates input into game-facing intent. Must use event-based key tracking
-(`pygame.event.get()` → `KEYDOWN`/`KEYUP` into your own held-keys dict), not
-`pygame.key.get_pressed()` (see MLX-equivalence section above). Movement model itself
-— continuous-while-held vs. classic Pac-Man behavior (commit to a direction, keep
-moving until blocked or a new valid direction is pressed) — **not yet decided**.
+`update()` — the per-frame state machine, movement style = traditional Pac-Man (commit
+to a direction, keep going until wall-blocked or a new valid buffered direction is
+available at a cell center):
+- Not centered: just advance `pixel_pos` by `speed` in `self.direction`. No wall checks
+  happen mid-transit.
+- Centered: if `buffer_dir` isn't wall-blocked, take it (`self.direction = buffer_dir`).
+  Else if `self.direction` is now wall-blocked, stop (`Direction.PAUSED`). Otherwise
+  leave `self.direction` as-is (keep going straight). If the resolved direction isn't
+  `PAUSED`, retarget `self.cell` to `_next_cell(self.direction)` — the adjacent cell one
+  step over — so `self.cell` again represents "where I'm walking toward" and next
+  frame's `_is_centered()` check has a new target to measure against.
+
+`_next_cell(direction)` — small helper, `(row, col)` shifted one step per direction; no
+maze-bounds checking (relies on `mazegenerator` always walling off the maze's outer
+edge, so `has_blocked_wall` should always catch an out-of-bounds step first — not
+independently verified this session).
+
+Not yet done: no `get_render_position()`/`get_facing()`-style accessors — `pixel_pos`/
+`direction` are plain public attributes right now, not wrapped in getter methods.
+Whether that's fine as-is or should be wrapped is undecided. `__init__`'s signature is
+still one long unwrapped line — flagged as a likely flake8 line-length violation,
+inconsistent with how `frame_buffer.py`'s constructor is wrapped; not yet fixed.
+flake8/mypy have not actually been run against this file this session — only reviewed
+by reading.
+
+### `player/controls.py` — done
+Deliberately **not** a class — reasoned through explicitly: a stateless
+class-with-only-static-methods is unnecessary ceremony in Python, and the PDF's OOP
+requirement is about the project's overall architecture (which has plenty of real
+stateful classes elsewhere), not a mandate that literally everything must be wrapped in
+one. `Controls` also doesn't hold a reference to `Movement` — kept decoupled, same as
+the rest of the self-containment principle.
+
+```python
+def check_keypress(events: list[pygame.event.Event]) -> Direction | None:
+```
+Loops the frame's events, checks `event.type == pygame.KEYDOWN` and `event.key` against
+`pygame.K_UP/DOWN/LEFT/RIGHT`, returns the matching `Direction` or `None` after checking
+every event (an earlier draft returned `None` on the *first* non-matching event via an
+`else` inside the loop — bug, since pygame batches multiple events per frame and that
+would silently drop real key presses sitting later in the same batch; fixed).
+
+No persistent "held keys" state — not needed for this movement style (see
+MLX-equivalence section above).
+
+**Not yet wired**: nothing in `main.py` calls `check_keypress(events)` or feeds its
+result into `movement.set_desired_direction(...)` yet.
+
+### `player/player.py` — done for now, likely to change
+```python
+class Player:
+    def __init__(self, lives: int = 3) -> None: ...
+    def get_lives(self) -> int: ...
+    def increase_lives(self, amount: int = 1) -> None: ...  # raises if amount < 1
+    def decrease_lives(self) -> int: ...  # raises if already at 0, else decrements + returns
+    def set_invincible(self, value: bool) -> None: ...
+    def get_invincible(self) -> bool: ...
+```
+Deliberately holds **no position** — that's `Movement`'s job entirely, to avoid two
+sources of truth for where Pac-Man is. Converted from a pseudocode draft that had a
+real bug (`decrease_lives` computed `self.lives - 1` but never actually assigned it, so
+lives never actually decreased) — fixed so the mutation persists.
+
+Flagged as likely to be adjusted once the partner's game-mechanics/scoring logic is
+settled — lives/scoring will probably need to integrate with whatever they build for
+collision/scoring rules.
 
 ## HUD
 
@@ -309,32 +377,39 @@ MLX-equivalence check when it's built (likely fine, since `mlx_string_put`/
 - mypy note: if mypy throws `INTERNAL ERROR ... sqlite3.OperationalError: disk I/O
   error`, that's a sandbox/mounted-filesystem quirk with mypy's cache DB, not a real
   code issue — rerun with `--cache-dir` pointed at a normal local path.
+- Pattern worth reusing: when a value (not a type) needs to be shared across
+  self-contained packages, construct it once in `main.py`/`Engine`, type it precisely
+  there (e.g. a `NamedTuple`) for that one construction site's own type-safety, but pass
+  it to consumers as a plain structural type (`tuple[int, int]`) that needs no import.
+  See `PixelMath` above.
 - Makefile, `.gitignore`, config file (JSON with comments), highscore system, cheat
   mode, packaging, README, and project-management docs: **not started at all** — all
   still outstanding per the PDF's mandatory requirements.
 
 ## Not started / TODO (not exhaustive, just what's been surfaced so far)
 
-- Add explicit None-guarding for `FrameBuffer.data` (typed `memoryview | None`)
-  wherever it's indexed, to satisfy mypy's None-safety checks.
-- Confirm the `blit`-lock fix (`lock_memview`/`unlock_memview` with explicit
-  `memoryview.release()`) actually resolves the `pygame.error` by rerunning.
-- Remove the dead `if not vis.running: return` check in `main.py`.
-- Decide `rendering/__init__.py`'s public exports now that `Visualizer` is meant to be
-  the package's single entry point.
+- Wire `Movement`, `Controls`, `Player` into `main.py`: construct instances, call
+  `check_keypress(events)` each frame and feed a non-`None` result into
+  `movement.set_desired_direction(...)`, call `movement.update()` each frame.
+- Decide how `SpriteRenderer` reads Pac-Man's position/direction from `Movement` for
+  drawing — plain attribute access (`movement.pixel_pos`/`movement.direction`) or
+  wrapper accessor methods.
+- Fix `player/movement.py`'s `__init__` — one long unwrapped signature line, likely a
+  flake8 line-length violation; wrap it like `frame_buffer.py`'s constructor. Run
+  flake8/mypy against the file for real (only reviewed by reading so far).
 - Decide `SpriteRenderer`'s relationship to `FrameBuffer` (direct buffer access vs.
   public interface), extend it to handle multiple simultaneous sprites, and wire it
-  into `Visualizer` (construct it there, call its draw method from `render_frame()`
-  inside the same lock/unlock cycle as the map).
-- Build `Controls` and decide the movement model.
-- Build `Engine` (dumb — owns only a `Visualizer` instance + the loop + eventually
-  `Controls`/game logic), move `main.py`'s temporary wiring into it.
+  into `Visualizer`.
+- Build `Engine` (owns a `Visualizer` + `Movement`/`Controls`/`Player` + the loop),
+  move `main.py`'s temporary wiring into it.
 - Decide who owns pacgum/super-pacgum/ghost-corner placement logic (not provided by
   `mazegenerator`).
 - Build the HUD-drawing component (text rendering).
 - Get the pygame/MLX-equivalence interpretation confirmed with 42 staff.
 - Fix level-1 seed once real level progression exists (currently hardcoded `seed=0`,
-  fully random, in `Visualizer`/`main.py`).
+  fully random, in `main.py`).
+- Revisit `Player`'s lives/scoring once the partner's game-mechanics/scoring logic
+  exists — likely needs integration, not just standalone methods.
 - Everything else in the PDF not yet touched: config loading/validation, highscore
-  system, cheat mode, scoring, ghosts, Makefile, README, project management docs,
+  system, cheat mode, ghosts, Makefile, README, project management docs,
   packaging/deployment.

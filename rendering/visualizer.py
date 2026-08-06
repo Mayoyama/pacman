@@ -6,22 +6,27 @@ import pygame
 
 class Visualizer:
     def __init__(self, start: tuple[int, int],
-                 maze: list[list[int]]) -> None:
+                 maze: list[list[int]],
+                 pixel_math: tuple[int, int]) -> None:
         """Set up the pygame window and static assets.
 
         Args:
             start: Start location of pacman.
             maze: Grid representaion of the maze.
         """
-        ui_state = UI_state()
-        rend_sett = RenderSettings()
-        maze_h = len(maze)
-        maze_w = len(maze[0])
-        self.frame_buff = FrameBuffer((maze_w, maze_h), rend_sett)
-        self.map_rend = MapRenderer(maze, self.frame_buff, rend_sett, ui_state)
-
         pygame.init()
         pygame.display.set_caption("Pacman")
+
+        self.ui_state = UI_state()
+        self.rend_sett = RenderSettings()
+        maze_h = len(maze)
+        maze_w = len(maze[0])
+        self.frame_buff = FrameBuffer((maze_w, maze_h), self.rend_sett, pixel_math)
+        self.map_rend = MapRenderer(maze, self.frame_buff, self.rend_sett, self.ui_state, pixel_math)
+
+
+
+        
 
 
         display_info = pygame.display.Info()
@@ -32,11 +37,22 @@ class Visualizer:
         self.running = True
         self.clock = pygame.time.Clock()
 
-    def render_frame(self) -> None:
-        for event in pygame.event.get():
+    def set_tick(self) -> None:
+        self.clock.tick(self.rend_sett.target_fps)
+
+    def handle_events(self, events: list[pygame.event.Event]) -> None:
+        """Processes window-level events, such as closing the window.
+
+        Args:
+            events: The frame's events, from pygame.event.get().
+        """
+        for event in events:
             if event.type == pygame.QUIT:
                 self.running = False
+
+    def render_frame(self) -> None:
         self.frame_buff.lock_memview()
+        self.frame_buff.clear_map()
         self.map_rend.render_grid()
         self.frame_buff.unlock_memview()
         self.frame_buff.blit_to_window(self.screen)

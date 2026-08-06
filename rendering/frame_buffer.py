@@ -4,13 +4,15 @@ import pygame
 
 class FrameBuffer:
     def __init__(self, dimensions: tuple[int, int],
-                 rend_settings: RenderSettings) -> None:
+                 rend_settings: RenderSettings,
+                 pixel_math: tuple[int, int]) -> None:
+        self.cell_size, self.padding = pixel_math
         self.maze_w, self.maze_h = dimensions
         self.rend_set = rend_settings
-        self.surf_w = ((2 * rend_settings.padding)
-                       + (self.maze_w * self.rend_set.cell_size))
-        self.surf_h = ((2 * rend_settings.padding)
-                       + (self.maze_h * self.rend_set.cell_size))
+        self.surf_w = ((2 * self.padding)
+                       + (self.maze_w * self.cell_size))
+        self.surf_h = ((2 * self.padding)
+                       + (self.maze_h * self.cell_size))
         self.surf = pygame.Surface((self.surf_w, self.surf_h),
                                    pygame.SRCALPHA, 32)
         self.data: memoryview | None = None
@@ -27,17 +29,20 @@ class FrameBuffer:
             The (x, y) pixel coordinates of the cell's top-left corner,
             accounting for the image margin and cell size.
         """
-        x = self.rend_set.padding + (c * self.rend_set.cell_size)
-        y = self.rend_set.padding + (r * self.rend_set.cell_size)
+        x = self.padding + (c * self.cell_size)
+        y = self.padding + (r * self.cell_size)
         return x, y
 
     def put_pixel(self, x: int, y: int, color: tuple[int, int, int]) -> None:
         """Renders pixels to the screen, based on RGBA values"""
-        offset = (y * self.size_line) + (x * 4)
-        self.data[offset + 0] = color[2]
-        self.data[offset + 1] = color[1]
-        self.data[offset + 2] = color[0]
-        self.data[offset + 3] = 255
+        if self.data is not None:
+            offset = (y * self.size_line) + (x * 4)
+            self.data[offset + 0] = color[2]
+            self.data[offset + 1] = color[1]
+            self.data[offset + 2] = color[0]
+            self.data[offset + 3] = 255
+        else:
+            raise ValueError("Put_pixel: illegal call with [self.data is None]")
 
     def draw_horizontal_line(self, x: int, y: int, length: int,
                               color: tuple[int, int, int] = (0, 0, 0)) -> None:
@@ -65,8 +70,8 @@ class FrameBuffer:
         be passed in
         """
         x, y = self.cell_to_pixel(r, c)
-        for r_offset in range(1, self.rend_set.cell_size - 1):
-            for c_offset in range(1, self.rend_set.cell_size - 1):
+        for r_offset in range(1, self.cell_size - 1):
+            for c_offset in range(1, self.cell_size - 1):
                 self.put_pixel(x + c_offset, y + r_offset, color)
 
     def blit_to_window(self, win_surf: pygame.Surface) -> None:
@@ -81,6 +86,10 @@ class FrameBuffer:
     def lock_memview(self) -> None:
             self.data = memoryview(
                         self.surf.get_buffer())  # type: ignore[arg-type]
+
     def unlock_memview(self) -> None:
+        if self.data is not None:
             self.data.release()
             self.data = None
+        else:
+            raise ValueError("Unlock_memview: illegal call with [self.data is None]")

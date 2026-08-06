@@ -3,7 +3,10 @@ from .settings import RenderSettings, UI_state
 
 
 class MapRenderer:
-    def __init__(self, maze: list[list[int]], frame_buffer: FrameBuffer, render_setting: RenderSettings, ui_state: UI_state) -> None:
+    def __init__(self, maze: list[list[int]], frame_buffer: FrameBuffer,
+                 render_setting: RenderSettings, ui_state: UI_state,
+                 pixel_math: tuple[int, int]) -> None:
+        self.cell_size, _ = pixel_math
         self.ui = ui_state
         self.frame_buff = frame_buffer
         self.rend_sett = render_setting
@@ -42,13 +45,13 @@ class MapRenderer:
     def _draw_cell(self, x: int, y: int, cell: int) -> None:
         """Checks the binary values (LSB) and draws walls if they exist"""
         if self._has_N_wall(cell):
-            self.frame_buff.draw_horizontal_line(x, y, self.rend_sett.cell_size, self.ui.wall_color)
+            self.frame_buff.draw_horizontal_line(x, y, self.cell_size, self.ui.wall_color)
         if self._has_E_wall(cell):
-            self.frame_buff.draw_vertical_line(x + self.rend_sett.cell_size, y, self.rend_sett.cell_size, self.ui.wall_color)
+            self.frame_buff.draw_vertical_line(x + self.cell_size, y, self.cell_size, self.ui.wall_color)
         if self._has_S_wall(cell):
-            self.frame_buff.draw_horizontal_line(x, y + self.rend_sett.cell_size, self.rend_sett.cell_size, self.ui.wall_color)
+            self.frame_buff.draw_horizontal_line(x, y + self.cell_size, self.cell_size, self.ui.wall_color)
         if self._has_W_wall(cell):
-            self.frame_buff.draw_vertical_line(x, y, self.rend_sett.cell_size, self.ui.wall_color)
+            self.frame_buff.draw_vertical_line(x, y, self.cell_size, self.ui.wall_color)
 
     def render_grid(self) -> None:
         """Renders walls and logo, """
