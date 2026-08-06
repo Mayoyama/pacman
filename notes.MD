@@ -1,1 +1,0 @@
-https://www.pygame.org/docs/ref/bufferproxy.html
