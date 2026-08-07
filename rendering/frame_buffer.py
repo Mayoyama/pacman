@@ -18,6 +18,8 @@ class FrameBuffer:
         self.data: memoryview | None = None
         self.size_line = self.surf.get_pitch()
 
+        self.snapshot: pygame.Surface | None = None
+
     def cell_to_pixel(self, r: int, c: int) -> tuple[int, int]:
         """Converts a grid cell's (row, col) to its top-left pixel position.
 
@@ -82,6 +84,21 @@ class FrameBuffer:
                                 + (avail_height // 2))
         surf_loc = self.surf.get_rect(center=mid)
         win_surf.blit(self.surf, surf_loc)
+
+    def save_snapshot(self) -> None:
+        self.snapshot = pygame.Surface((self.surf_w, self.surf_h),
+                                       pygame.SRCALPHA, 32)
+        src = memoryview(self.surf.get_buffer())  # type: ignore[arg-type]
+        dst = memoryview(self.snapshot.get_buffer())  # type: ignore[arg-type]
+        dst[:] = src[:]
+        src.release()
+        dst.release()
+
+    def blit_snapshot(self) -> None:
+        if self.snapshot is None:
+            raise ValueError("blit_snapshot: snapshot is None")
+        else:
+            self.surf.blit(self.snapshot, (0, 0))
 
     def lock_memview(self) -> None:
             self.data = memoryview(

@@ -1,4 +1,4 @@
 [submodule "pacman-notes"]
 	path = pacman-notes
-	url = git@github.com:Mayoyama/pacman-notes.git
+	url = ../pacman-notes.git
 	branch = main

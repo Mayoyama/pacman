@@ -1,57 +1,85 @@
-from typing import Any
+from pathlib import Path
+import pygame
 
 
-class SpriteRenderer:
-    SPRITE_OFFSET_X = 8
-    SPRITE_OFFSET_Y = 7
+class Sprites:
+    def __init__(self) -> None:
+        ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+        pacgum_path = ASSETS_DIR / "pacgum.png"
+        superpacgum_path = ASSETS_DIR / "super_pacgum.png"
+        base_ghost_path = ASSETS_DIR / "ghost_base.png"
+        try:
+            self.pacgum_img = pygame.image.load(pacgum_path).convert_alpha()
+            self.superpacgum_img = pygame.image.load(superpacgum_path).convert_alpha()
+            self.base_ghost_img = pygame.image.load(base_ghost_path).convert_alpha()
+        except (FileNotFoundError, IsADirectoryError, PermissionError) as e:
+            print(f"Sprites class error: {e}")
 
-    def set_sprite(self, sprite_data: Any, sprite_size_line: int,
-                   sprite_width: int, sprite_height: int) -> None:
-        """Store sprite image data for later rendering."""
-        self._sprite_data = sprite_data
-        self._sprite_size_line = sprite_size_line
-        self._sprite_width = sprite_width
-        self._sprite_height = sprite_height
+        self.colored_ghosts: dict[str, pygame.Surface] = {}
 
-    def draw_sprite(self, sprite_pos: tuple[int, int]) -> None:
-        """Draws the sprite image onto the maze at the given cell.
 
-        Converts 'sprite_pos' to its pixel location via '_cell_to_pixel',
-        then copies the sprite's pixels onto the image buffer starting at
-        that position, using each pixel's alpha channel to blend it with
-        the maze underneath so transparent areas of the sprite don't
-        overwrite the maze.
+        self.frightened_bright: pygame.Surface = self.apply_ghost_color(self.base_ghost_img, (0, 0, 255))
+        self.frightened_dark: pygame.Surface = self.apply_ghost_color(self.base_ghost_img, (0, 0, 140))
+
+    def apply_ghost_color(self, ghost_surf: pygame.Surface, color: tuple[int, int, int]) -> pygame.Surface:
+        """Returns a new surface: base's silhouette recolored to `color`.
+
+        Loops every pixel of `base`. Wherever its color is pure white,
+        writes `color` into the new surface at that pixel (keeping the
+        original alpha). Wherever alpha is zero, the new surface stays
+        transparent there (its default state).
         """
-        if not self._sprite_data or not sprite_pos:
-            return
 
-        r, c = sprite_pos
+        new_surf = pygame.Surface(ghost_surf.get_size(), pygame.SRCALPHA, 32)
+        src = memoryview(ghost_surf.get_buffer())  # type: ignore[arg-type]
+        dst = memoryview(new_surf.get_buffer())  # type: ignore[arg-type]
+        pitch = ghost_surf.get_pitch()
+        w, h = ghost_surf.get_size()
+        for y in range(h):
+            for x in range(w):
+                offset = (y * pitch) + (x * 4)
+                b, g, r, a = src[offset:offset + 4]
+                if (r, g, b) == (255, 255, 255) and a != 0:
+                    dst[offset + 0] = color[2]
+                    dst[offset + 1] = color[1]
+                    dst[offset + 2] = color[0]
+                    dst[offset + 3] = a
+                else:
+                    dst[offset + 0] = b
+                    dst[offset + 1] = g
+                    dst[offset + 2] = r
+                    dst[offset + 3] = a
+        src.release()
+        dst.release()
+        return new_surf
 
-        sprite_x, sprite_y = self._cell_to_pixel(r, c)
-        sprite_x -= self.SPRITE_OFFSET_X
-        sprite_y -= self.SPRITE_OFFSET_Y
+    def build_colored_ghosts(self,
+                             ghosts: dict[str, tuple[int, int, int]]) -> None:
+        for name, color in ghosts.items():
+            self.colored_ghosts[name] = \
+                self.apply_ghost_color(self.base_ghost_img, color)
 
-        for y in range(self._sprite_height):
-            for x in range(self._sprite_width):
-                src_offset = (y * self._sprite_size_line) + (x * 4)
 
-                blue = self._sprite_data[src_offset + 0]
-                green = self._sprite_data[src_offset + 1]
-                red = self._sprite_data[src_offset + 2]
-                alpha = self._sprite_data[src_offset + 3]
+    def render_sprites(self, target: pygame.Surface) -> None:
+        """Draws gummies, pacman, and ghosts for one frame.
 
-                if alpha == 0:
-                    continue
+        Args:
+            target: Surface to blit onto.
 
-                dest_x = sprite_x + x
-                dest_y = sprite_y + y
+        TODO: decide the actual parameter list - gummy position sets,
+        pacman's pixel_pos/direction, ghost positions + which color/
+        frightened-state each one needs, based on what main.py/Visualizer
+        actually has available once wiring happens.
+        """
 
-                if (
-                 0 <= dest_x < self._image_width
-                 and 0 <= dest_y < self._image_height):
-                    offset = (dest_y * self._size_line) + (dest_x * 4)
+        """
+         TEMPORARY: positions are hardcoded and not maze-aligned, just to
+        confirm the colorized ghosts actually render. Replace once real
+        ghost positions + the FrameBuffer offset are wired in.
+        """
+        positions = [(50, 50), (150, 50), (50, 150), (150, 150)]
+        for (name, surf), pos in zip(self.colored_ghosts.items(), positions):
+            target.blit(surf, pos)
 
-                    self._data[offset + 0] = blue
-                    self._data[offset + 1] = green
-                    self._data[offset + 2] = red
-                    self._data[offset + 3] = 255
+        target.blit(self.pacgum_img, (50, 220))
+        target.blit(self.superpacgum_img, (150, 220))

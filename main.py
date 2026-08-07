@@ -15,7 +15,17 @@ def main() -> None:
     pixel_math = PixelMath()
     maze = mazegen.maze
     start = mazegen.maze_entry
-    vis = Visualizer(start, maze, pixel_math)
+
+    # Dummy stand-in for real ghost objects. Refactor once ghosts exist:
+    # e.g. {ghost.name: ghost.color for ghost in ghosts}
+    ghosts: dict[str, tuple[int, int, int]] = {
+        "Blinky": (255, 0, 0),
+        "Pinky": (255, 184, 255),
+        "Inky": (0, 255, 255),
+        "Clyde": (255, 184, 82),
+    }
+
+    vis = Visualizer(start, maze, pixel_math, ghosts)
 
     while vis.running:
         vis.set_tick()
