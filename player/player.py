@@ -1,16 +1,49 @@
 class Player:
-    """Tracks player-owned game state: lives and cheat-mode invincibility.
+    """Tracks player-owned game state.
 
     Position, movement, and collision belong to Movement, not Player.
     """
 
     def __init__(self, lives: int = 3) -> None:
-        self.lives = lives
-        self.is_invincible = False
+        """Sets up starting lives and invincibility state.
+
+        Args:
+            lives: Starting life count.
+        """
+        self._lives = lives
+        self.score = 0
+        self._is_invincible = False
+        self._name = ""
+
+    def set_name(self) -> None:
+        """Prompts for and validates the player's name via stdin.
+
+        Repeats the prompt until a name of 3-10 characters, containing
+        only letters, digits, and spaces, is entered.
+        """
+        while not self._name:
+            self._name = str(input("Player's name: "))
+            for char in self._name:
+                if len(self._name) < 3:
+                    print("WARNING: player name too short.")
+                    self._name = ""
+                    break
+                if len(self._name) > 10:
+                    print("WARNING: player name too long.")
+                    self._name = ""
+                    break
+                if not char.isalnum() and char != ' ':
+                    print("WARNING: invalid character in player name.")
+                    self._name = ""
+                    break
+
+    def get_name(self) -> str:
+        """Return the player's name."""
+        return self._name
 
     def get_lives(self) -> int:
         """Return the player's current life count."""
-        return self.lives
+        return self._lives
 
     def increase_lives(self, amount: int = 1) -> None:
         """Add to the player's life count.
@@ -23,7 +56,7 @@ class Player:
         """
         if amount < 1:
             raise ValueError("increase_lives: amount must be at least 1")
-        self.lives += amount
+        self._lives += amount
 
     def decrease_lives(self) -> int:
         """Remove one life from the player's count.
@@ -34,15 +67,15 @@ class Player:
         Raises:
             ValueError: If called when no lives remain.
         """
-        if self.lives < 1:
+        if self._lives < 1:
             raise ValueError("decrease_lives: no lives remaining")
-        self.lives -= 1
-        return self.lives
+        self._lives -= 1
+        return self._lives
 
     def set_invincible(self, value: bool) -> None:
         """Enable or disable invincibility (cheat mode)."""
-        self.is_invincible = value
+        self._is_invincible = value
 
     def get_invincible(self) -> bool:
         """Return whether the player is currently invincible."""
-        return self.is_invincible
+        return self._is_invincible

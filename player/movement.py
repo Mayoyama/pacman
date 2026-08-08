@@ -1,6 +1,10 @@
 from enum import Enum
+from sys import stderr
+
 
 class Direction(Enum):
+    """The four cardinal movement directions, plus a paused state."""
+
     UP = "up"
     DOWN = "down"
     LEFT = "left"
@@ -9,16 +13,31 @@ class Direction(Enum):
 
 
 class Movement:
-    def __init__(self, start: tuple[int, int], maze: list[list[int]], pixel_math: tuple[int, int]) -> None:
+    """Owns one entity's grid cell, pixel position, and per-frame movement."""
+
+    def __init__(self, start: tuple[int, int], maze: list[list[int]],
+                 pixel_math: tuple[int, int]) -> None:
+        """Sets up starting position and movement/tolerance parameters.
+
+        Args:
+            start: Starting (row, col) grid cell.
+            maze: Grid representation of the maze, for wall checks.
+            pixel_math: (cell_size, padding) shared rendering constants.
+        """
         self.cell_size, self.padding = pixel_math
         self.maze = maze
-        self.cell: tuple[int, int] = start          # grid cell, for wall checks
-        self.pixel_pos: tuple[int, int] = self.cell_center(*start)       # continuous position, for tolerance check + rendering
-        self.direction: Direction = Direction.PAUSED    # direction actually moving
-        self.buffer_dir: Direction = Direction.PAUSED   # desired direction, applied when valid
+        self.position: tuple[int, int] = start
+        self.pixel_pos: tuple[int, int] = self.cell_center(*start)
+        self.direction: Direction = Direction.PAUSED
+        self.buffer_dir: Direction = Direction.PAUSED
         frames_per_cell = 4
-        self.speed: int = max(1, self.cell_size // frames_per_cell)        # advance per frame
-        self.tolerance: int = self.speed    # how close to a cell center counts as "centered"
+        if frames_per_cell < 2:
+            print("Invalid frames_per_cell (<2); using default of 4",
+                  file=stderr)
+            frames_per_cell = 4
+        self.speed: int = max(1, self.cell_size // frames_per_cell)
+        # self.tolerance: how close to a cell center counts as "centered"
+        self.tolerance: int = self.speed
 
     @staticmethod
     def _has_N_wall(cell: int) -> bool:
@@ -68,28 +87,27 @@ class Movement:
         x, y = self.cell_to_pixel(r, c)
         return x + self.cell_size // 2, y + self.cell_size // 2
 
-    def has_blocked_wall(self, direction: Direction) -> bool:
-        """Checks whether a wall blocks movement from the current cell.
+    def can_move(self, direction: Direction) -> bool:
+        """Checks whether a movement is valid from the current cell.
 
         Args:
-            direction: The direction to check (e.g. self.direction to see
-                if travel can continue, or self.buffer_dir to see if a
-                queued turn is currently valid).
+            direction: The direction to check.
 
         Returns:
-            True if a wall blocks movement in that direction, False
-            otherwise.
+            True if movement in valid, False otherwise.
         """
-        r, c = self.cell
-        cell_value = self.maze[r][c]
-        if direction == Direction.UP:
-            return self._has_N_wall(cell_value)
-        elif direction == Direction.DOWN:
-            return self._has_S_wall(cell_value)
-        elif direction == Direction.LEFT:
-            return self._has_W_wall(cell_value)
-        elif direction == Direction.RIGHT:
-            return self._has_E_wall(cell_value)
+        r, c = self.position[0], self.position[1]
+        match direction:
+            case Direction.UP:
+                return r > 0 and not self._has_N_wall(self.maze[r][c])
+            case Direction.LEFT:
+                return c > 0 and not self._has_W_wall(self.maze[r][c])
+            case Direction.DOWN:
+                return (r < len(self.maze) - 1
+                        and not self._has_S_wall(self.maze[r][c]))
+            case Direction.RIGHT:
+                return (c < len(self.maze[0]) - 1
+                        and not self._has_E_wall(self.maze[r][c]))
         return False
 
     def set_desired_direction(self, direction: Direction) -> None:
@@ -112,7 +130,7 @@ class Movement:
             considered aligned, False otherwise.
         """
         px, py = self.pixel_pos
-        cx, cy = self.cell_center(*self.cell)
+        cx, cy = self.cell_center(*self.position)
         if abs(px - cx) <= self.tolerance and abs(py - cy) <= self.tolerance:
             return True
         return False
@@ -126,13 +144,13 @@ class Movement:
         that is wall-blocked, in which case movement stops.
         """
         if self._is_centered():
-            if not self.has_blocked_wall(self.buffer_dir):
+            if self.can_move(self.buffer_dir):
                 self.direction = self.buffer_dir
-            elif self.has_blocked_wall(self.direction):
+            elif not self.can_move(self.direction):
                 self.direction = Direction.PAUSED
 
             if self.direction != Direction.PAUSED:
-                self.cell = self._next_cell(self.direction)
+                self.position = self._next_cell(self.direction)
         else:
             x, y = self.pixel_pos
             if self.direction == Direction.UP:
@@ -153,7 +171,7 @@ class Movement:
         Returns:
             The (row, col) of the neighboring cell.
         """
-        r, c = self.cell
+        r, c = self.position
         if direction == Direction.UP:
             return (r - 1, c)
         elif direction == Direction.DOWN:
