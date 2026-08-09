@@ -1,4 +1,4 @@
-from .settings import RenderSettings
+from .settings import RenderSettings, PixelMath
 from .rendering_utils import cell_to_pixel
 import pygame
 
@@ -8,7 +8,7 @@ class FrameBuffer:
 
     def __init__(self, dimensions: tuple[int, int],
                  rend_settings: RenderSettings,
-                 pixel_math: tuple[int, int]) -> None:
+                 pixel_math: PixelMath) -> None:
         """Allocates the drawing surface sized for the given maze.
 
         Args:

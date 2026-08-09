@@ -1,4 +1,4 @@
-from .settings import UI_state, RenderSettings
+from .settings import UI_state, RenderSettings, PixelMath, SpriteRenderState
 from .frame_buffer import FrameBuffer
 from .map_rendering import MapRenderer
 from .sprite_rendering import Sprites
@@ -19,12 +19,12 @@ class Visualizer:
     """
 
     SCREEN_FRACTION = 0.85
-    MAX_DESIGN_COLS = 60
-    MAX_DESIGN_ROWS = 35
+    MAX_DESIGN_COLS = 45
+    MAX_DESIGN_ROWS = 30
 
     def __init__(self, start: tuple[int, int],
                  maze: list[list[int]],
-                 pixel_math: tuple[int, int],
+                 pixel_math: PixelMath,
                  ghosts: dict[str, tuple[int, int, int]]) -> None:
         """Set up the pygame window and static assets.
 
@@ -103,28 +103,23 @@ class Visualizer:
         self.frame_buff.unlock_maze_memview()
         self.frame_buff.save_maze_snapshot()
 
-    def render_frame(self, direction: str,
-                     ghost_pos: dict[str, tuple[int, int]],
-                     superpacgums: set[tuple[int, int]],
-                     pacgums: set[tuple[int, int]],
-                     pacpixel_pos: tuple[int, int],
-                     mouth_state: str) -> None:
+    def render_frame(self, sprite_state: SpriteRenderState, died: bool,
+                     death_step: int) -> None:
         """Draws one frame: restores the cached maze, then blits to window.
 
         Args:
-            direction: Pacman's current facing direction, one of
-                "up"/"down"/"left"/"right".
-            ghost_pos: Each ghost's current (col, row) grid position,
-                keyed by name.
-            superpacgums: (row, col) of every remaining super pacgum.
-            pacgums: (row, col) of every remaining pacgum.
-            pacpixel_pos: Pacman's continuous pixel position.
+            sprite_state: This frame's pacman/ghost/pacgum animation
+                state - see SpriteRenderState for field details.
+                Untouched here, just forwarded to Sprites.render_sprites.
+            died: Whether pacman has died this frame (dev-mode: any
+                collision counts as death).
+            death_step: Which sprite in the death sequence is currently
+                showing, if died is True.
         """
         self.screen.fill((0, 0, 0))
         self.frame_buff.blit_maze_snapshot()
         self.frame_buff.blit_maze_to_win(self.screen)
         maze_offset = self.frame_buff.get_maze_location()
-        self.sprites.render_sprites(self.screen, direction, maze_offset,
-                                    ghost_pos, superpacgums, pacgums,
-                                    pacpixel_pos, mouth_state)
+        self.sprites.render_sprites(self.screen, maze_offset, sprite_state,
+                                    died, death_step)
         pygame.display.flip()

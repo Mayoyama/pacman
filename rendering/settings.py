@@ -1,8 +1,20 @@
 from dataclasses import dataclass
+from typing import NamedTuple
 
 
-@dataclass(frozen=True)
-class RenderSettings:
+class PixelMath(NamedTuple):
+    """Rendering constants shared everywhere.
+
+    Attributes:
+        cell_size: Width/height of one maze cell, in pixels.
+        padding: Margin around the maze, in pixels.
+    """
+
+    cell_size: int = 24
+    padding: int = 10
+
+
+class RenderSettings(NamedTuple):
     """Frozen rendering configuration shared across the renderer.
 
     Attributes:
@@ -14,6 +26,32 @@ class RenderSettings:
     target_fps: int = 30
     top_hud_height: int = 40
     btm_hud_height: int = 40
+
+
+class SpriteRenderState(NamedTuple):
+    """Per-frame animation state needed to draw pacman, ghosts, and pacgums.
+
+    Rebuilt fresh every frame from that frame's current values - never
+    mutated in place, so a new instance simply replaces the old one.
+
+    Attributes:
+        last_direction: Pacman's current facing direction, one of
+            "up"/"down"/"left"/"right" (a `Direction.value`).
+        ghost_pos: Each ghost's current (col, row) grid position,
+            keyed by name.
+        superpacgums: (row, col) of every remaining super pacgum.
+        pacgums: (row, col) of every remaining pacgum.
+        pacpixel_pos: Pacman's continuous pixel position.
+        mouth_state: Pacman's current mouth animation frame, one of
+            "closed"/"half"/"open".
+    """
+
+    last_direction: str
+    ghost_pos: dict[str, tuple[int, int]]
+    superpacgums: set[tuple[int, int]]
+    pacgums: set[tuple[int, int]]
+    pacpixel_pos: tuple[int, int]
+    mouth_state: str
 
 
 @dataclass

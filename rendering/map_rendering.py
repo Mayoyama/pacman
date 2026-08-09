@@ -1,6 +1,6 @@
 from .frame_buffer import FrameBuffer
 from .rendering_utils import cell_to_pixel
-from .settings import RenderSettings, UI_state
+from .settings import RenderSettings, UI_state, PixelMath
 
 
 class MapRenderer:
@@ -8,7 +8,7 @@ class MapRenderer:
 
     def __init__(self, maze: list[list[int]], frame_buffer: FrameBuffer,
                  render_setting: RenderSettings, ui_state: UI_state,
-                 pixel_math: tuple[int, int]) -> None:
+                 pixel_math: PixelMath) -> None:
         """Sets up the maze reference and derives the '42' logo cells.
 
         Args:

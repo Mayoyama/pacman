@@ -16,25 +16,27 @@ class Movement:
     """Owns one entity's grid cell, pixel position, and per-frame movement."""
 
     def __init__(self, start: tuple[int, int], maze: list[list[int]],
-                 pixel_math: tuple[int, int]) -> None:
+                 cell_size: int, padding: int) -> None:
         """Sets up starting position and movement/tolerance parameters.
 
         Args:
             start: Starting (row, col) grid cell.
             maze: Grid representation of the maze, for wall checks.
-            pixel_math: (cell_size, padding) shared rendering constants.
+            cell_size: Width/height of one maze cell, in pixels.
+            padding: Margin around the maze, in pixels.
         """
-        self.cell_size, self.padding = pixel_math
+        self.cell_size = cell_size
+        self.padding = padding
         self.maze = maze
         self.position: tuple[int, int] = start
         self.pixel_pos: tuple[int, int] = self.cell_center(*start)
         self.direction: Direction = Direction.PAUSED
         self.buffer_dir: Direction = Direction.PAUSED
-        frames_per_cell = 11
+        frames_per_cell = 8
         if frames_per_cell < 2:
-            print("Invalid frames_per_cell (<2); using default of 4",
+            print("Invalid frames_per_cell (<2); using default of 12",
                   file=stderr)
-            frames_per_cell = 4
+            frames_per_cell = 12
         self.speed: int = max(1, self.cell_size // frames_per_cell)
         # self.tolerance: how close to a cell center counts as "centered"
         self.tolerance: int = 0

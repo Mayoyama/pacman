@@ -1,12 +1,13 @@
 from pathlib import Path
 from .rendering_utils import cell_center
+from .settings import PixelMath, SpriteRenderState
 import pygame
 
 
 class Sprites:
     """Loads sprite assets and recolors/draws them each frame."""
 
-    def __init__(self, pixel_math: tuple[int, int]) -> None:
+    def __init__(self, pixel_math: PixelMath) -> None:
         """Loads every sprite asset, builds the per-direction pacman
         frame dict, and derives the frightened-ghost tints.
 
@@ -16,6 +17,9 @@ class Sprites:
         self.cell_size, self.padding = pixel_math
         self._load_sprites()
         self.pacsprite_dict = self._build_pacsprite_dict()
+        self.deathsprite_list = [self.pac_up_3, self.pac_death_1,
+                                 self.pac_death_2, self.pac_death_3,
+                                 self.pac_death_4, self.pac_death_blank]
 
         self.colored_ghosts: dict[str, pygame.Surface] = {}
 
@@ -48,6 +52,12 @@ class Sprites:
         pac_left_open_path = ASSETS_DIR / "pacman_left_open.png"
         pac_right_half_path = ASSETS_DIR / "pacman_right_half.png"
         pac_right_open_path = ASSETS_DIR / "pacman_right_open.png"
+
+        pac_death_1_path = ASSETS_DIR / "pacman_death_1.png"
+        pac_death_2_path = ASSETS_DIR / "pacman_death_2.png"
+        pac_death_3_path = ASSETS_DIR / "pacman_death_3.png"
+        pac_death_4_path = ASSETS_DIR / "pacman_death_4.png"
+        pac_death_blank_path = ASSETS_DIR / "pacman_death_blank.png"
 
         # ghost_placeholder must stay pure white - apply_ghost_color only
         # recolors exact white pixels, so any other color would silently
@@ -86,6 +96,19 @@ class Sprites:
             pac_right_half_path, pacman_placeholder)
         self.pac_right_3 = self._load_image_or_fallback(
             pac_right_open_path, pacman_placeholder)
+
+        # Death sequence: frame 0 reuses pac_up_open (already loaded above),
+        # these are frames 1-4, followed by a fully blank frame.
+        self.pac_death_1 = self._load_image_or_fallback(
+            pac_death_1_path, pacman_placeholder)
+        self.pac_death_2 = self._load_image_or_fallback(
+            pac_death_2_path, pacman_placeholder)
+        self.pac_death_3 = self._load_image_or_fallback(
+            pac_death_3_path, pacman_placeholder)
+        self.pac_death_4 = self._load_image_or_fallback(
+            pac_death_4_path, pacman_placeholder)
+        self.pac_death_blank = self._load_image_or_fallback(
+            pac_death_blank_path, pacman_placeholder)
 
     @staticmethod
     def _make_placeholder(
@@ -181,54 +204,53 @@ class Sprites:
             pacsprites[direction] = sprites
         return pacsprites
 
-    def render_sprites(self, target: pygame.Surface, direction: str,
+    def render_sprites(self, target: pygame.Surface,
                        maze_offset: pygame.Rect,
-                       ghost_pos: dict[str, tuple[int, int]],
-                       superpacgums: set[tuple[int, int]],
-                       pacgums: set[tuple[int, int]],
-                       pacpixel_pos: tuple[int, int],
-                       mouth_state: str) -> None:
+                       sprite_state: SpriteRenderState, died: bool,
+                       death_step: int) -> None:
         """Draws gummies, pacman, and ghosts for one frame.
 
         Args:
             target: Surface to blit onto.
-            direction: Pacman's current facing direction - one of
-                "up"/"down"/"left"/"right" (a `Direction.value`).
             maze_offset: The maze surface's current on-screen Rect,
                 used to shift every cell-based position onto the
                 window correctly.
-            ghost_pos: Each ghost's current (col, row) grid position,
-                keyed by name.
-            superpacgums: (row, col) of every remaining super pacgum.
-            pacgums: (row, col) of every remaining pacgum.
-            pacpixel_pos: Pacman's continuous pixel position.
+            sprite_state: This frame's pacman/ghost/pacgum animation
+                state - see SpriteRenderState for field details.
+            died: Whether pacman has died this frame (dev-mode: any
+                collision counts as death).
+            death_step: Which sprite in the death sequence is currently
+                showing, if died is True.
 
         Frightened-state ghost tints (self.frightened_bright/_dark) are
         not yet used here - still pending real frightened-state logic.
         """
         off_x, off_y = maze_offset.topleft
 
-        for r, c in superpacgums:
+        for r, c in sprite_state.superpacgums:
             cx, cy = cell_center(r, c, self.cell_size, self.padding)
             surf_mid = self.superpacgum_img.get_rect(
                 center=(cx + off_x, cy + off_y))
             target.blit(self.superpacgum_img, surf_mid)
 
-        for r, c in pacgums:
+        for r, c in sprite_state.pacgums:
             cx, cy = cell_center(r, c, self.cell_size, self.padding)
             surf_mid = self.pacgum_img.get_rect(
                 center=(cx + off_x, cy + off_y))
             target.blit(self.pacgum_img, surf_mid)
 
         for name, surf in self.colored_ghosts.items():
-            c, r = ghost_pos[name]
+            c, r = sprite_state.ghost_pos[name]
             cx, cy = cell_center(r, c, self.cell_size, self.padding)
             surf_mid = surf.get_rect(center=(cx + off_x, cy + off_y))
             target.blit(surf, surf_mid)
 
-        pac_x, pac_y = pacpixel_pos
+        pac_x, pac_y = sprite_state.pacpixel_pos
 
-        mouth_index = {"closed": 0, "half": 1, "open": 2}
-        img = self.pacsprite_dict[direction][mouth_index[mouth_state]]
+        if died:
+            img = self.deathsprite_list[death_step]
+        else:
+            mouth_index = {"closed": 0, "half": 1, "open": 2}
+            img = self.pacsprite_dict[sprite_state.last_direction][mouth_index[sprite_state.mouth_state]]
         surf_mid = img.get_rect(center=(pac_x + off_x, pac_y + off_y))
         target.blit(img, surf_mid)
