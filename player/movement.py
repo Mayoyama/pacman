@@ -30,14 +30,14 @@ class Movement:
         self.pixel_pos: tuple[int, int] = self.cell_center(*start)
         self.direction: Direction = Direction.PAUSED
         self.buffer_dir: Direction = Direction.PAUSED
-        frames_per_cell = 4
+        frames_per_cell = 11
         if frames_per_cell < 2:
             print("Invalid frames_per_cell (<2); using default of 4",
                   file=stderr)
             frames_per_cell = 4
         self.speed: int = max(1, self.cell_size // frames_per_cell)
         # self.tolerance: how close to a cell center counts as "centered"
-        self.tolerance: int = self.speed
+        self.tolerance: int = 0
 
     @staticmethod
     def _has_N_wall(cell: int) -> bool:

@@ -1,27 +1,113 @@
 from pathlib import Path
+from .rendering_utils import cell_center
 import pygame
 
 
 class Sprites:
-    def __init__(self) -> None:
+    """Loads sprite assets and recolors/draws them each frame."""
+
+    def __init__(self, pixel_math: tuple[int, int]) -> None:
+        """Loads every sprite asset, builds the per-direction pacman
+        frame dict, and derives the frightened-ghost tints.
+
+        Args:
+            pixel_math: (cell_size, padding) shared rendering constants.
+        """
+        self.cell_size, self.padding = pixel_math
+        self._load_sprites()
+        self.pacsprite_dict = self._build_pacsprite_dict()
+
+        self.colored_ghosts: dict[str, pygame.Surface] = {}
+
+        self.frightened_bright: pygame.Surface = \
+            self.apply_ghost_color(self.base_ghost_img, (0, 0, 255))
+        self.frightened_dark: pygame.Surface = \
+            self.apply_ghost_color(self.base_ghost_img, (0, 0, 140))
+
+    def _load_sprites(self) -> None:
+        """Loads all sprite images, falling back to a placeholder per
+        asset family if a file is missing or corrupt, so the game
+        doesn't crash.
+
+        Pac-Man frames are named `self.pac_<direction>_<state>`: state
+        1 is mouth closed, 2 is half open, 3 is fully open. The closed
+        frame is identical for every direction, so all four `_1`
+        attributes share one loaded surface.
+        """
         ASSETS_DIR = Path(__file__).resolve().parent / "assets"
         pacgum_path = ASSETS_DIR / "pacgum.png"
         superpacgum_path = ASSETS_DIR / "super_pacgum.png"
         base_ghost_path = ASSETS_DIR / "ghost_base.png"
+
+        pac_closed_path = ASSETS_DIR / "pacman_closed.png"
+        pac_up_half_path = ASSETS_DIR / "pacman_up_half.png"
+        pac_up_open_path = ASSETS_DIR / "pacman_up_open.png"
+        pac_down_half_path = ASSETS_DIR / "pacman_down_half.png"
+        pac_down_open_path = ASSETS_DIR / "pacman_down_open.png"
+        pac_left_half_path = ASSETS_DIR / "pacman_left_half.png"
+        pac_left_open_path = ASSETS_DIR / "pacman_left_open.png"
+        pac_right_half_path = ASSETS_DIR / "pacman_right_half.png"
+        pac_right_open_path = ASSETS_DIR / "pacman_right_open.png"
+
+        # ghost_placeholder must stay pure white - apply_ghost_color only
+        # recolors exact white pixels, so any other color would silently
+        # mis-render every ghost.
+        ghost_placeholder = self._make_placeholder((20, 20), (255, 255, 255))
+        gummy_placeholder = self._make_placeholder((20, 20), (255, 255, 0))
+        pacman_placeholder = self._make_placeholder((20, 20), (255, 255, 0))
+
+        self.pacgum_img = self._load_image_or_fallback(
+            pacgum_path, gummy_placeholder)
+        self.superpacgum_img = self._load_image_or_fallback(
+            superpacgum_path, gummy_placeholder)
+        self.base_ghost_img = self._load_image_or_fallback(
+            base_ghost_path, ghost_placeholder)
+
+        self.pac_closed = self._load_image_or_fallback(
+            pac_closed_path, pacman_placeholder)
+        self.pac_up_1 = self.pac_closed
+        self.pac_down_1 = self.pac_closed
+        self.pac_left_1 = self.pac_closed
+        self.pac_right_1 = self.pac_closed
+
+        self.pac_up_2 = self._load_image_or_fallback(
+            pac_up_half_path, pacman_placeholder)
+        self.pac_up_3 = self._load_image_or_fallback(
+            pac_up_open_path, pacman_placeholder)
+        self.pac_down_2 = self._load_image_or_fallback(
+            pac_down_half_path, pacman_placeholder)
+        self.pac_down_3 = self._load_image_or_fallback(
+            pac_down_open_path, pacman_placeholder)
+        self.pac_left_2 = self._load_image_or_fallback(
+            pac_left_half_path, pacman_placeholder)
+        self.pac_left_3 = self._load_image_or_fallback(
+            pac_left_open_path, pacman_placeholder)
+        self.pac_right_2 = self._load_image_or_fallback(
+            pac_right_half_path, pacman_placeholder)
+        self.pac_right_3 = self._load_image_or_fallback(
+            pac_right_open_path, pacman_placeholder)
+
+    @staticmethod
+    def _make_placeholder(
+            size: tuple[int, int],
+            color: tuple[int, int, int]) -> pygame.Surface:
+        """Plain filled square, used when a sprite PNG fails to load."""
+        surf = pygame.Surface(size, pygame.SRCALPHA, 32)
+        surf.fill(color)
+        return surf
+
+    @staticmethod
+    def _load_image_or_fallback(
+            path: Path, fallback: pygame.Surface) -> pygame.Surface:
+        """Loads `path` as a Surface; returns `fallback` if unreadable."""
         try:
-            self.pacgum_img = pygame.image.load(pacgum_path).convert_alpha()
-            self.superpacgum_img = pygame.image.load(superpacgum_path).convert_alpha()
-            self.base_ghost_img = pygame.image.load(base_ghost_path).convert_alpha()
+            return pygame.image.load(path).convert_alpha()
         except (FileNotFoundError, IsADirectoryError, PermissionError) as e:
-            print(f"Sprites class error: {e}")
+            print(f"Sprites class error loading {path}: {e}")
+            return fallback
 
-        self.colored_ghosts: dict[str, pygame.Surface] = {}
-
-
-        self.frightened_bright: pygame.Surface = self.apply_ghost_color(self.base_ghost_img, (0, 0, 255))
-        self.frightened_dark: pygame.Surface = self.apply_ghost_color(self.base_ghost_img, (0, 0, 140))
-
-    def apply_ghost_color(self, ghost_surf: pygame.Surface, color: tuple[int, int, int]) -> pygame.Surface:
+    def apply_ghost_color(self, ghost_surf: pygame.Surface,
+                          color: tuple[int, int, int]) -> pygame.Surface:
         """Returns a new surface: base's silhouette recolored to `color`.
 
         Loops every pixel of `base`. Wherever its color is pure white,
@@ -55,31 +141,94 @@ class Sprites:
 
     def build_colored_ghosts(self,
                              ghosts: dict[str, tuple[int, int, int]]) -> None:
+        """Builds and caches one recolored ghost surface per name.
+
+        Args:
+            ghosts: Name-to-RGB-color map, one entry per ghost.
+        """
         for name, color in ghosts.items():
             self.colored_ghosts[name] = \
                 self.apply_ghost_color(self.base_ghost_img, color)
 
+    def _build_pacsprite_dict(
+            self) -> dict[str, tuple[pygame.Surface, pygame.Surface,
+                                     pygame.Surface]]:
+        """Builds the direction-keyed pacman animation-frame dict.
 
-    def render_sprites(self, target: pygame.Surface) -> None:
+        Falls back to three copies of the closed frame for any
+        direction whose sprites can't be found by name, so a naming
+        mismatch degrades gracefully instead of crashing.
+
+        Returns:
+            dict mapping "up"/"down"/"left"/"right" to that
+            direction's (closed, half, open) frame tuple.
+        """
+        pacsprites: dict[str, tuple[pygame.Surface, pygame.Surface,
+                                    pygame.Surface]] = {}
+        for direction in ("up", "down", "left", "right"):
+            try:
+                sprites: tuple[pygame.Surface, pygame.Surface,
+                               pygame.Surface] = \
+                  (
+                    getattr(self, f"pac_{direction}_1"),
+                    getattr(self, f"pac_{direction}_2"),
+                    getattr(self, f"pac_{direction}_3")
+                  )
+            except AttributeError:
+                print(f"_build_pacsprite_dict: pac_{direction} img not found."
+                      " Defaulting to pac_closed img")
+                sprites = (self.pac_closed, self.pac_closed, self.pac_closed)
+            pacsprites[direction] = sprites
+        return pacsprites
+
+    def render_sprites(self, target: pygame.Surface, direction: str,
+                       maze_offset: pygame.Rect,
+                       ghost_pos: dict[str, tuple[int, int]],
+                       superpacgums: set[tuple[int, int]],
+                       pacgums: set[tuple[int, int]],
+                       pacpixel_pos: tuple[int, int],
+                       mouth_state: str) -> None:
         """Draws gummies, pacman, and ghosts for one frame.
 
         Args:
             target: Surface to blit onto.
+            direction: Pacman's current facing direction - one of
+                "up"/"down"/"left"/"right" (a `Direction.value`).
+            maze_offset: The maze surface's current on-screen Rect,
+                used to shift every cell-based position onto the
+                window correctly.
+            ghost_pos: Each ghost's current (col, row) grid position,
+                keyed by name.
+            superpacgums: (row, col) of every remaining super pacgum.
+            pacgums: (row, col) of every remaining pacgum.
+            pacpixel_pos: Pacman's continuous pixel position.
 
-        TODO: decide the actual parameter list - gummy position sets,
-        pacman's pixel_pos/direction, ghost positions + which color/
-        frightened-state each one needs, based on what main.py/Visualizer
-        actually has available once wiring happens.
+        Frightened-state ghost tints (self.frightened_bright/_dark) are
+        not yet used here - still pending real frightened-state logic.
         """
+        off_x, off_y = maze_offset.topleft
 
-        """
-         TEMPORARY: positions are hardcoded and not maze-aligned, just to
-        confirm the colorized ghosts actually render. Replace once real
-        ghost positions + the FrameBuffer offset are wired in.
-        """
-        positions = [(50, 50), (150, 50), (50, 150), (150, 150)]
-        for (name, surf), pos in zip(self.colored_ghosts.items(), positions):
-            target.blit(surf, pos)
+        for r, c in superpacgums:
+            cx, cy = cell_center(r, c, self.cell_size, self.padding)
+            surf_mid = self.superpacgum_img.get_rect(
+                center=(cx + off_x, cy + off_y))
+            target.blit(self.superpacgum_img, surf_mid)
 
-        target.blit(self.pacgum_img, (50, 220))
-        target.blit(self.superpacgum_img, (150, 220))
+        for r, c in pacgums:
+            cx, cy = cell_center(r, c, self.cell_size, self.padding)
+            surf_mid = self.pacgum_img.get_rect(
+                center=(cx + off_x, cy + off_y))
+            target.blit(self.pacgum_img, surf_mid)
+
+        for name, surf in self.colored_ghosts.items():
+            c, r = ghost_pos[name]
+            cx, cy = cell_center(r, c, self.cell_size, self.padding)
+            surf_mid = surf.get_rect(center=(cx + off_x, cy + off_y))
+            target.blit(surf, surf_mid)
+
+        pac_x, pac_y = pacpixel_pos
+
+        mouth_index = {"closed": 0, "half": 1, "open": 2}
+        img = self.pacsprite_dict[direction][mouth_index[mouth_state]]
+        surf_mid = img.get_rect(center=(pac_x + off_x, pac_y + off_y))
+        target.blit(img, surf_mid)

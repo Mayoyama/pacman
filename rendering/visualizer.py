@@ -1,39 +1,75 @@
 from .settings import UI_state, RenderSettings
 from .frame_buffer import FrameBuffer
-from  .map_rendering import MapRenderer
+from .map_rendering import MapRenderer
 from .sprite_rendering import Sprites
 import pygame
 
 
 class Visualizer:
+    """Owns the pygame window and drives per-frame rendering.
+
+    Class Attributes:
+        SCREEN_FRACTION: Fraction of the screen resolution the window
+            may use at most, leaving room for the taskbar/panel.
+        MAX_DESIGN_COLS: Design ceiling (not a technical limit) for
+            maze width in cells, used to size the window once for the
+            whole game.
+        MAX_DESIGN_ROWS: Design ceiling (not a technical limit) for
+            maze height in cells, used the same way as MAX_DESIGN_COLS.
+    """
+
+    SCREEN_FRACTION = 0.85
+    MAX_DESIGN_COLS = 60
+    MAX_DESIGN_ROWS = 35
+
     def __init__(self, start: tuple[int, int],
                  maze: list[list[int]],
                  pixel_math: tuple[int, int],
                  ghosts: dict[str, tuple[int, int, int]]) -> None:
         """Set up the pygame window and static assets.
 
+        cell_size/padding are fixed for the whole game, so the window
+        is sized once here and never touched again: big enough for a
+        maze at the design ceiling, capped by the screen itself so it
+        never overflows onto the taskbar/panel.
+
         Args:
             start: Start location of pacman.
-            maze: Grid representaion of the maze.
+            maze: Grid representation of the maze.
+            pixel_math: (cell_size, padding) shared rendering constants.
+            ghosts: Name-to-color map used to build the cached colored
+                ghost surfaces once, at startup.
         """
         pygame.init()
         pygame.display.set_caption("Pacman")
 
         self.ui_state = UI_state()
         self.rend_sett = RenderSettings()
+
+        cell_size, padding = pixel_math
+        display_info = pygame.display.Info()
+        screen_w = int(display_info.current_w * self.SCREEN_FRACTION)
+        screen_h = int(display_info.current_h * self.SCREEN_FRACTION)
+
+        design_w = (self.MAX_DESIGN_COLS * cell_size) + (2 * padding)
+        design_h = ((self.MAX_DESIGN_ROWS * cell_size) + (2 * padding)
+                    + self.rend_sett.top_hud_height
+                    + self.rend_sett.btm_hud_height)
+        win_w = min(screen_w, design_w)
+        win_h = min(screen_h, design_h)
+
         maze_h = len(maze)
         maze_w = len(maze[0])
-        self.frame_buff = FrameBuffer((maze_w, maze_h), self.rend_sett, pixel_math)
-        self.map_rend = MapRenderer(maze, self.frame_buff, self.rend_sett, self.ui_state, pixel_math)
+        self.frame_buff = FrameBuffer(
+            (maze_w, maze_h), self.rend_sett, pixel_math)
+        self.map_rend = MapRenderer(
+            maze, self.frame_buff, self.rend_sett, self.ui_state, pixel_math)
 
         self.refresh_static_layer()
 
-        display_info = pygame.display.Info()
-        win_height = int(display_info.current_h * 0.7)
-        win_width = int(display_info.current_w * 0.7)
-        self.screen = pygame.display.set_mode((win_width, win_height))
+        self.screen = pygame.display.set_mode((win_w, win_h))
 
-        self.sprites = Sprites()
+        self.sprites = Sprites(pixel_math)
         self.sprites.build_colored_ghosts(ghosts)
 
         self.running = True
@@ -61,15 +97,34 @@ class Visualizer:
         can cheaply restore this cached layer each frame instead of
         redrawing the whole maze from scratch.
         """
-        self.frame_buff.lock_memview()
-        self.frame_buff.clear_map()
+        self.frame_buff.lock_maze_memview()
+        self.frame_buff.clear_maze()
         self.map_rend.render_grid()
-        self.frame_buff.unlock_memview()
-        self.frame_buff.save_snapshot()
+        self.frame_buff.unlock_maze_memview()
+        self.frame_buff.save_maze_snapshot()
 
-    def render_frame(self) -> None:
-        """Draws one frame: restores the cached maze, then blits to window."""
-        self.frame_buff.blit_snapshot()
-        self.frame_buff.blit_to_window(self.screen)
-        self.sprites.render_sprites(self.screen)
+    def render_frame(self, direction: str,
+                     ghost_pos: dict[str, tuple[int, int]],
+                     superpacgums: set[tuple[int, int]],
+                     pacgums: set[tuple[int, int]],
+                     pacpixel_pos: tuple[int, int],
+                     mouth_state: str) -> None:
+        """Draws one frame: restores the cached maze, then blits to window.
+
+        Args:
+            direction: Pacman's current facing direction, one of
+                "up"/"down"/"left"/"right".
+            ghost_pos: Each ghost's current (col, row) grid position,
+                keyed by name.
+            superpacgums: (row, col) of every remaining super pacgum.
+            pacgums: (row, col) of every remaining pacgum.
+            pacpixel_pos: Pacman's continuous pixel position.
+        """
+        self.screen.fill((0, 0, 0))
+        self.frame_buff.blit_maze_snapshot()
+        self.frame_buff.blit_maze_to_win(self.screen)
+        maze_offset = self.frame_buff.get_maze_location()
+        self.sprites.render_sprites(self.screen, direction, maze_offset,
+                                    ghost_pos, superpacgums, pacgums,
+                                    pacpixel_pos, mouth_state)
         pygame.display.flip()
