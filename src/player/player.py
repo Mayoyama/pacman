@@ -11,7 +11,7 @@ class Player:
             lives: Starting life count.
         """
         self._lives = lives
-        self.score = 0
+        self._score = 0
         self._is_invincible = False
         self._name = ""
 
@@ -71,6 +71,14 @@ class Player:
             raise ValueError("decrease_lives: no lives remaining")
         self._lives -= 1
         return self._lives
+
+    def increase_score(self, points: int) -> None:
+        if points < 1:
+            raise ValueError("increase_score: 0 or negative value passed")
+        self._score += points
+
+    def get_score(self) -> int:
+        return self._score
 
     def set_invincible(self, value: bool) -> None:
         """Enable or disable invincibility (cheat mode)."""

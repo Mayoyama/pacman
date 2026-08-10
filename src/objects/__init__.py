@@ -1,8 +1,9 @@
 from .pacgums import Gummis
-from .ghosts import Inky, Blinky, Pinky, Clyde
+from .ghosts import Ghost, Inky, Blinky, Pinky, Clyde
 
 __all__ = [
     "Gummis",
+    "Ghost",
     "Inky",
     "Blinky",
     "Pinky",

@@ -217,7 +217,7 @@ class Sprites:
             target.blit(self.sprites_dict["pacgum"], surf_mid)
 
         for name, surf in self.colored_ghosts.items():
-            c, r = sprite_state.ghost_pos[name]
+            r, c = sprite_state.ghost_pos[name]
             cx, cy = cell_center(r, c, self.cell_size, self.maze_offset)
             surf_mid = surf.get_rect(center=(cx + off_x, cy + off_y))
             target.blit(surf, surf_mid)

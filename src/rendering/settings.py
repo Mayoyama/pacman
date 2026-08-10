@@ -39,7 +39,7 @@ class SpriteRenderState(NamedTuple):
     Attributes:
         last_direction: Pacman's current facing direction, one of
             "up"/"down"/"left"/"right" (a `Direction.value`).
-        ghost_pos: Each ghost's current (col, row) grid position,
+        ghost_pos: Each ghost's current (row, col) grid position,
             keyed by name.
         superpacgums: (row, col) of every remaining super pacgum.
         pacgums: (row, col) of every remaining pacgum.

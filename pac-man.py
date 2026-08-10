@@ -1,66 +1,69 @@
 from mazegenerator import MazeGenerator
-from rendering import Visualizer, PixelMath, SpriteRenderState
-from player import check_keypress, Direction, Movement, Player
-from objects import Gummis, Blinky, Pinky, Inky, Clyde
-from game_logic import check_collision
+from sys import stderr
 import pygame
 import math
+from src import (parsing, MazeState, Visualizer, PixelMath, SpriteRenderState,
+                 check_keypress, Direction, Movement, Player, Gummis, Ghost,
+                 Blinky, Pinky, Inky, Clyde, check_collision)
 
 
 def main() -> None:
-    # Testing code, all of this needs to be reorganised, but
-    # the overall order of instantiation matters for visual things
-    maze_w = 35
-    maze_h = 25
-    center = (maze_w // 2, maze_h // 2)
-    mazegen = MazeGenerator((maze_w, maze_h), False, center, (-1, -1), 1)
-    pixel_math = PixelMath()
-
+    config = parsing()
+    maze_level = 0
+    lv1_maze_w = config.levels[maze_level].width
+    lv1_maze_h = config.levels[maze_level].height
+    lv1_center = (lv1_maze_w // 2, lv1_maze_h // 2)
+    if isinstance(config.seed, int) and config.seed > 0:
+        seed = config.seed
+    else:
+        print("Invalid starting seed value, defaulting to 42", file=stderr)
+        seed = 42
+    mazegen = MazeGenerator((lv1_maze_w, lv1_maze_h), False, lv1_center,
+                            (-1, -1), seed)
     maze = mazegen.maze
     start_col, start_row = mazegen.maze_entry
     start = (start_row, start_col)
-    player = Player()
-    
 
+    player = Player()  # NEEDS WIRING IN
     gums = Gummis(maze, start)
     pinky = Pinky(0, 0)
-    blinky = Blinky(len(maze[0]) - 1, 0)
-    clyde = Clyde(0, len(maze) - 1)
-    inky = Inky(len(maze[0]) - 1, len(maze) - 1)
+    blinky = Blinky(0, len(maze[0]) - 1)
+    clyde = Clyde(len(maze) - 1, 0)
+    inky = Inky(len(maze) - 1, len(maze[0]) - 1)
 
-    ghosts: dict[str, tuple[int, int, int]] = {
+    ghosts_palette: dict[str, tuple[int, int, int]] = {
         "Blinky": blinky.color,
         "Pinky": pinky.color,
         "Inky": inky.color,
-        "Clyde": clyde.color,
-    }
+        "Clyde": clyde.color}
 
-    # Dummy values, remove/update in live version
-    died = False
-    death_step = 0
-    death_timer = 0
-    death_frames: list[int] = [15, 7, 5 ,3 ,1, 90]
-
-
-    # Testing code, offsets to be erased in real version
-    bc, br = blinky.curr_pos
-    b_offset = (bc, br + 1)
-    pc, pr = pinky.curr_pos
-    p_offset = (pc + 1, pr + 1)
-    ic, ir = inky.curr_pos
-    i_offset = (ic - 2, ir - 3)
-    ghost_pos: dict[str, tuple[int, int]] = {
-        "Blinky": b_offset,
-        "Pinky": p_offset,
-        "Inky": i_offset,
-        "Clyde": clyde.curr_pos,
-    }
-
-    vis = Visualizer(start, maze, pixel_math, ghosts)
+    pixel_math = PixelMath()
+    vis = Visualizer(start, maze, pixel_math, ghosts_palette)
     movement = Movement(start, maze, vis.get_maze_offset(),
                         pixel_math.cell_size)
 
-    last_openness = 1.0  # starts facing right, fully open
+    ghosts: dict[str, Ghost] = {
+        "Blinky": blinky,
+        "Pinky": pinky,
+        "Inky": inky,
+        "Clyde": clyde}
+
+    maze_state = MazeState(maze, movement, ghosts)
+
+    ghost_pos: dict[str, tuple[int, int]] = {
+        "Blinky": blinky.curr_pos,
+        "Pinky": pinky.curr_pos,
+        "Inky": inky.curr_pos,
+        "Clyde": clyde.curr_pos,
+    }
+
+    died = False
+    death_step = 0
+    death_timer = 0
+    death_frames: list[int] = [15, 7, 5, 3, 1, 90]
+
+    # Pacman starts facing right, fully open
+    last_openness = 1.0
     last_dir = Direction.RIGHT.value
     while vis.running:
         vis.set_tick()
@@ -93,9 +96,9 @@ def main() -> None:
             # after movement logic is finalised
             collision_threshhold = 12
             for ghost in (blinky, pinky, inky, clyde):
-                gc, gr = ghost_pos[ghost.name]
-                if check_collision(movement.cell_center(gr, gc), movement.pixel_pos,
-                                   collision_threshhold):
+                gr, gc = ghost_pos[ghost.name]
+                if check_collision(movement.cell_center(gr, gc),
+                                   movement.pixel_pos, collision_threshhold):
                     died = True
                     break
 
@@ -108,7 +111,7 @@ def main() -> None:
                             / (movement.cell_size - movement.tolerance))
                 fraction = max(0.0, min(1.0, fraction))
                 last_openness = math.sin(math.pi * fraction)
-            # else: leave last_openness untouched - frozen at whatever it last was
+            # else: leave last_openness frozen at whatever it was last
 
             if last_openness < 0.33:
                 mouth_state = "closed"
@@ -132,5 +135,9 @@ if __name__ == "__main__":
         main()
     except ValueError as e:
         print(f"ValueError: {e}")
+    except KeyError as e:
+        print(f"KeyError: {e}")
     except AssertionError as e:
         print(f"Internal logic error: {e}")
+    except Exception as e:
+        print(f"Caught {e.__class__.__name__}: {e}")
