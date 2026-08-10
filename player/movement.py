@@ -16,17 +16,19 @@ class Movement:
     """Owns one entity's grid cell, pixel position, and per-frame movement."""
 
     def __init__(self, start: tuple[int, int], maze: list[list[int]],
-                 cell_size: int, padding: int) -> None:
+                 maze_offset: tuple[int, int],
+                 cell_size: int) -> None:
         """Sets up starting position and movement/tolerance parameters.
 
         Args:
             start: Starting (row, col) grid cell.
             maze: Grid representation of the maze, for wall checks.
+            maze_offset: (x, y) pixel offset centering the actual maze
+                within its (possibly larger) surface.
             cell_size: Width/height of one maze cell, in pixels.
-            padding: Margin around the maze, in pixels.
         """
         self.cell_size = cell_size
-        self.padding = padding
+        self.maze_offset = maze_offset
         self.maze = maze
         self.position: tuple[int, int] = start
         self.pixel_pos: tuple[int, int] = self.cell_center(*start)
@@ -72,8 +74,9 @@ class Movement:
             The (x, y) pixel coordinates of the cell's top-left corner,
             accounting for the image margin and cell size.
         """
-        x = self.padding + (c * self.cell_size)
-        y = self.padding + (r * self.cell_size)
+        off_x, off_y = self.maze_offset
+        x = off_x + (c * self.cell_size)
+        y = off_y + (r * self.cell_size)
         return x, y
 
     def cell_center(self, r: int, c: int) -> tuple[int, int]:

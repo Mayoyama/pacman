@@ -1,5 +1,5 @@
 from pathlib import Path
-from .rendering_utils import cell_center
+from .rendering_utils import cell_center, fill
 from .settings import PixelMath, SpriteRenderState
 import pygame
 
@@ -7,57 +7,47 @@ import pygame
 class Sprites:
     """Loads sprite assets and recolors/draws them each frame."""
 
-    def __init__(self, pixel_math: PixelMath) -> None:
+    def __init__(self, pixel_math: PixelMath,
+                 maze_offset: tuple[int, int]) -> None:
         """Loads every sprite asset, builds the per-direction pacman
         frame dict, and derives the frightened-ghost tints.
 
         Args:
             pixel_math: (cell_size, padding) shared rendering constants.
+            maze_offset: (x, y) pixel offset centering the actual maze
+                within its (possibly larger) surface.
         """
-        self.cell_size, self.padding = pixel_math
+        self.cell_size = pixel_math.cell_size
+        self.maze_offset = maze_offset
         self._load_sprites()
         self.pacsprite_dict = self._build_pacsprite_dict()
-        self.deathsprite_list = [self.pac_up_3, self.pac_death_1,
-                                 self.pac_death_2, self.pac_death_3,
-                                 self.pac_death_4, self.pac_death_blank]
+        self.deathsprite_list = [
+            self.sprites_dict["pac_up_3"], self.sprites_dict["pac_death_1"],
+            self.sprites_dict["pac_death_2"], self.sprites_dict["pac_death_3"],
+            self.sprites_dict["pac_death_4"],
+            self.sprites_dict["pac_death_blank"]]
 
         self.colored_ghosts: dict[str, pygame.Surface] = {}
 
         self.frightened_bright: pygame.Surface = \
-            self.apply_ghost_color(self.base_ghost_img, (0, 0, 255))
+            self.apply_ghost_color(self.sprites_dict["base_ghost"],
+                                   (0, 0, 255))
         self.frightened_dark: pygame.Surface = \
-            self.apply_ghost_color(self.base_ghost_img, (0, 0, 140))
+            self.apply_ghost_color(self.sprites_dict["base_ghost"],
+                                   (0, 0, 140))
 
     def _load_sprites(self) -> None:
-        """Loads all sprite images, falling back to a placeholder per
-        asset family if a file is missing or corrupt, so the game
-        doesn't crash.
+        """Loads all sprite images into self.sprites_dict, falling back
+        to a placeholder per asset family if a file is missing or
+        corrupt, so the game doesn't crash.
 
-        Pac-Man frames are named `self.pac_<direction>_<state>`: state
+        Pac-Man frames are keyed as `pac_<direction>_<state>`: state
         1 is mouth closed, 2 is half open, 3 is fully open. The closed
         frame is identical for every direction, so all four `_1`
-        attributes share one loaded surface.
+        keys share one loaded surface.
         """
+
         ASSETS_DIR = Path(__file__).resolve().parent / "assets"
-        pacgum_path = ASSETS_DIR / "pacgum.png"
-        superpacgum_path = ASSETS_DIR / "super_pacgum.png"
-        base_ghost_path = ASSETS_DIR / "ghost_base.png"
-
-        pac_closed_path = ASSETS_DIR / "pacman_closed.png"
-        pac_up_half_path = ASSETS_DIR / "pacman_up_half.png"
-        pac_up_open_path = ASSETS_DIR / "pacman_up_open.png"
-        pac_down_half_path = ASSETS_DIR / "pacman_down_half.png"
-        pac_down_open_path = ASSETS_DIR / "pacman_down_open.png"
-        pac_left_half_path = ASSETS_DIR / "pacman_left_half.png"
-        pac_left_open_path = ASSETS_DIR / "pacman_left_open.png"
-        pac_right_half_path = ASSETS_DIR / "pacman_right_half.png"
-        pac_right_open_path = ASSETS_DIR / "pacman_right_open.png"
-
-        pac_death_1_path = ASSETS_DIR / "pacman_death_1.png"
-        pac_death_2_path = ASSETS_DIR / "pacman_death_2.png"
-        pac_death_3_path = ASSETS_DIR / "pacman_death_3.png"
-        pac_death_4_path = ASSETS_DIR / "pacman_death_4.png"
-        pac_death_blank_path = ASSETS_DIR / "pacman_death_blank.png"
 
         # ghost_placeholder must stay pure white - apply_ghost_color only
         # recolors exact white pixels, so any other color would silently
@@ -66,49 +56,35 @@ class Sprites:
         gummy_placeholder = self._make_placeholder((20, 20), (255, 255, 0))
         pacman_placeholder = self._make_placeholder((20, 20), (255, 255, 0))
 
-        self.pacgum_img = self._load_image_or_fallback(
-            pacgum_path, gummy_placeholder)
-        self.superpacgum_img = self._load_image_or_fallback(
-            superpacgum_path, gummy_placeholder)
-        self.base_ghost_img = self._load_image_or_fallback(
-            base_ghost_path, ghost_placeholder)
+        self.sprites_dict: dict[str, pygame.Surface] = {}
 
-        self.pac_closed = self._load_image_or_fallback(
-            pac_closed_path, pacman_placeholder)
-        self.pac_up_1 = self.pac_closed
-        self.pac_down_1 = self.pac_closed
-        self.pac_left_1 = self.pac_closed
-        self.pac_right_1 = self.pac_closed
+        specs = [
+            ("pacgum", "pacgum.png", gummy_placeholder),
+            ("superpacgum", "super_pacgum.png", gummy_placeholder),
+            ("base_ghost", "ghost_base.png", ghost_placeholder),
+            ("pac_closed", "pacman_closed.png", pacman_placeholder),
+            ("pac_up_2", "pacman_up_half.png", pacman_placeholder),
+            ("pac_up_3", "pacman_up_open.png", pacman_placeholder),
+            ("pac_down_2", "pacman_down_half.png", pacman_placeholder),
+            ("pac_down_3", "pacman_down_open.png", pacman_placeholder),
+            ("pac_left_2", "pacman_left_half.png", pacman_placeholder),
+            ("pac_left_3", "pacman_left_open.png", pacman_placeholder),
+            ("pac_right_2", "pacman_right_half.png", pacman_placeholder),
+            ("pac_right_3", "pacman_right_open.png", pacman_placeholder),
+            ("pac_death_1", "pacman_death_1.png", pacman_placeholder),
+            ("pac_death_2", "pacman_death_2.png", pacman_placeholder),
+            ("pac_death_3", "pacman_death_3.png", pacman_placeholder),
+            ("pac_death_4", "pacman_death_4.png", pacman_placeholder),
+            ("pac_death_blank", "pacman_death_blank.png", pacman_placeholder)
+        ]
 
-        self.pac_up_2 = self._load_image_or_fallback(
-            pac_up_half_path, pacman_placeholder)
-        self.pac_up_3 = self._load_image_or_fallback(
-            pac_up_open_path, pacman_placeholder)
-        self.pac_down_2 = self._load_image_or_fallback(
-            pac_down_half_path, pacman_placeholder)
-        self.pac_down_3 = self._load_image_or_fallback(
-            pac_down_open_path, pacman_placeholder)
-        self.pac_left_2 = self._load_image_or_fallback(
-            pac_left_half_path, pacman_placeholder)
-        self.pac_left_3 = self._load_image_or_fallback(
-            pac_left_open_path, pacman_placeholder)
-        self.pac_right_2 = self._load_image_or_fallback(
-            pac_right_half_path, pacman_placeholder)
-        self.pac_right_3 = self._load_image_or_fallback(
-            pac_right_open_path, pacman_placeholder)
+        for name, filename, placeholder in specs:
+            self.sprites_dict[name] = self._load_image_or_fallback(
+                ASSETS_DIR / filename, placeholder)
 
-        # Death sequence: frame 0 reuses pac_up_open (already loaded above),
-        # these are frames 1-4, followed by a fully blank frame.
-        self.pac_death_1 = self._load_image_or_fallback(
-            pac_death_1_path, pacman_placeholder)
-        self.pac_death_2 = self._load_image_or_fallback(
-            pac_death_2_path, pacman_placeholder)
-        self.pac_death_3 = self._load_image_or_fallback(
-            pac_death_3_path, pacman_placeholder)
-        self.pac_death_4 = self._load_image_or_fallback(
-            pac_death_4_path, pacman_placeholder)
-        self.pac_death_blank = self._load_image_or_fallback(
-            pac_death_blank_path, pacman_placeholder)
+        for direction in ("up", "down", "left", "right"):
+            self.sprites_dict[f"pac_{direction}_1"] = \
+                self.sprites_dict["pac_closed"]
 
     @staticmethod
     def _make_placeholder(
@@ -116,7 +92,7 @@ class Sprites:
             color: tuple[int, int, int]) -> pygame.Surface:
         """Plain filled square, used when a sprite PNG fails to load."""
         surf = pygame.Surface(size, pygame.SRCALPHA, 32)
-        surf.fill(color)
+        fill(surf, color)
         return surf
 
     @staticmethod
@@ -171,7 +147,7 @@ class Sprites:
         """
         for name, color in ghosts.items():
             self.colored_ghosts[name] = \
-                self.apply_ghost_color(self.base_ghost_img, color)
+                self.apply_ghost_color(self.sprites_dict["base_ghost"], color)
 
     def _build_pacsprite_dict(
             self) -> dict[str, tuple[pygame.Surface, pygame.Surface,
@@ -191,16 +167,17 @@ class Sprites:
         for direction in ("up", "down", "left", "right"):
             try:
                 sprites: tuple[pygame.Surface, pygame.Surface,
-                               pygame.Surface] = \
-                  (
-                    getattr(self, f"pac_{direction}_1"),
-                    getattr(self, f"pac_{direction}_2"),
-                    getattr(self, f"pac_{direction}_3")
-                  )
-            except AttributeError:
+                               pygame.Surface] = (
+                    self.sprites_dict[f"pac_{direction}_1"],
+                    self.sprites_dict[f"pac_{direction}_2"],
+                    self.sprites_dict[f"pac_{direction}_3"]
+                )
+            except KeyError:
                 print(f"_build_pacsprite_dict: pac_{direction} img not found."
                       " Defaulting to pac_closed img")
-                sprites = (self.pac_closed, self.pac_closed, self.pac_closed)
+                sprites = (self.sprites_dict["pac_closed"],
+                           self.sprites_dict["pac_closed"],
+                           self.sprites_dict["pac_closed"])
             pacsprites[direction] = sprites
         return pacsprites
 
@@ -228,20 +205,20 @@ class Sprites:
         off_x, off_y = maze_offset.topleft
 
         for r, c in sprite_state.superpacgums:
-            cx, cy = cell_center(r, c, self.cell_size, self.padding)
-            surf_mid = self.superpacgum_img.get_rect(
+            cx, cy = cell_center(r, c, self.cell_size, self.maze_offset)
+            surf_mid = self.sprites_dict["superpacgum"].get_rect(
                 center=(cx + off_x, cy + off_y))
-            target.blit(self.superpacgum_img, surf_mid)
+            target.blit(self.sprites_dict["superpacgum"], surf_mid)
 
         for r, c in sprite_state.pacgums:
-            cx, cy = cell_center(r, c, self.cell_size, self.padding)
-            surf_mid = self.pacgum_img.get_rect(
+            cx, cy = cell_center(r, c, self.cell_size, self.maze_offset)
+            surf_mid = self.sprites_dict["pacgum"].get_rect(
                 center=(cx + off_x, cy + off_y))
-            target.blit(self.pacgum_img, surf_mid)
+            target.blit(self.sprites_dict["pacgum"], surf_mid)
 
         for name, surf in self.colored_ghosts.items():
             c, r = sprite_state.ghost_pos[name]
-            cx, cy = cell_center(r, c, self.cell_size, self.padding)
+            cx, cy = cell_center(r, c, self.cell_size, self.maze_offset)
             surf_mid = surf.get_rect(center=(cx + off_x, cy + off_y))
             target.blit(surf, surf_mid)
 
@@ -251,6 +228,7 @@ class Sprites:
             img = self.deathsprite_list[death_step]
         else:
             mouth_index = {"closed": 0, "half": 1, "open": 2}
-            img = self.pacsprite_dict[sprite_state.last_direction][mouth_index[sprite_state.mouth_state]]
+            img = self.pacsprite_dict[sprite_state.last_direction][
+                mouth_index[sprite_state.mouth_state]]
         surf_mid = img.get_rect(center=(pac_x + off_x, pac_y + off_y))
         target.blit(img, surf_mid)

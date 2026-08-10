@@ -6,30 +6,43 @@ import pygame
 class FrameBuffer:
     """Owns the pixel surface the maze and gameplay are drawn onto."""
 
-    def __init__(self, dimensions: tuple[int, int],
+    def __init__(self, maze_dimensions: tuple[int, int],
+                 max_dimensions: tuple[int, int],
                  rend_settings: RenderSettings,
                  pixel_math: PixelMath) -> None:
-        """Allocates the drawing surface sized for the given maze.
+        """Allocates the drawing surface sized for the max design
+        ceiling, keeping the actual maze's own dimensions separately
+        so it can be centered within that larger surface.
 
         Args:
-            dimensions: (maze_w, maze_h) in cells.
+            maze_dimensions: (maze_w, maze_h) in cells - the actual
+                maze being played.
+            max_dimensions: (max_w, max_h) in cells - the design
+                ceiling the surface itself is always built at,
+                regardless of maze_dimensions.
             rend_settings: Shared rendering configuration.
             pixel_math: (cell_size, padding) shared rendering constants.
         """
         self.cell_size, self.padding = pixel_math
-        self.maze_w, self.maze_h = dimensions
+        self.maze_w, self.maze_h = maze_dimensions
+        self.max_maze_surf_w, self.max_maze_surf_h = max_dimensions
         self.rend_set = rend_settings
         self.surf_w = ((2 * self.padding)
-                       + (self.maze_w * self.cell_size))
+                       + (self.max_maze_surf_w * self.cell_size))
         self.surf_h = ((2 * self.padding)
-                       + (self.maze_h * self.cell_size))
+                       + (self.max_maze_surf_h * self.cell_size))
         self.surf = pygame.Surface((self.surf_w, self.surf_h),
                                    pygame.SRCALPHA, 32)
+        self.maze_offset = self.get_maze_surf_center()
 
         self.data: memoryview | None = None
         self.size_line = self.surf.get_pitch()
         self.snapshot: pygame.Surface | None = None
         self.maze_surf_loc: pygame.Rect | None = None
+
+    def get_maze_surf_center(self) -> tuple[int, int]:
+        return (((self.surf_w - (self.maze_w * self.cell_size)) // 2),
+                ((self.surf_h - (self.maze_h * self.cell_size)) // 2))
 
     def get_maze_location(self) -> pygame.Rect:
         """Returns the maze surface's current on-screen Rect.
@@ -81,7 +94,7 @@ class FrameBuffer:
             c: The cell's column index.
             color: RGB fill color.
         """
-        x, y = cell_to_pixel(r, c, self.cell_size, self.padding)
+        x, y = cell_to_pixel(r, c, self.cell_size, self.maze_offset)
         for r_offset in range(1, self.cell_size - 1):
             for c_offset in range(1, self.cell_size - 1):
                 self.put_pixel(x + c_offset, y + r_offset, color)
@@ -92,10 +105,10 @@ class FrameBuffer:
         Args:
             win_surf: The window surface to blit onto.
         """
-        avail_height = (win_surf.get_height() - self.rend_set.top_hud_height
-                        - self.rend_set.btm_hud_height)
+        avail_height = (win_surf.get_height() - self.rend_set.top_hud_h
+                        - self.rend_set.btm_hud_h)
         mid: tuple[int, int] = (win_surf.get_width() // 2,
-                                self.rend_set.top_hud_height
+                                self.rend_set.top_hud_h
                                 + (avail_height // 2))
         self.maze_surf_loc = self.surf.get_rect(center=mid)
         win_surf.blit(self.surf, self.maze_surf_loc)

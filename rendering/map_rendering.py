@@ -8,7 +8,8 @@ class MapRenderer:
 
     def __init__(self, maze: list[list[int]], frame_buffer: FrameBuffer,
                  render_setting: RenderSettings, ui_state: UI_state,
-                 pixel_math: PixelMath) -> None:
+                 pixel_math: PixelMath,
+                 maze_offset: tuple[int, int]) -> None:
         """Sets up the maze reference and derives the '42' logo cells.
 
         Args:
@@ -17,8 +18,11 @@ class MapRenderer:
             render_setting: Shared rendering configuration.
             ui_state: Shared mutable UI colors/toggles.
             pixel_math: (cell_size, padding) shared rendering constants.
+            maze_offset: (x, y) pixel offset centering the actual maze
+                within its (possibly larger) surface.
         """
-        self.cell_size, self.padding = pixel_math
+        self.cell_size = pixel_math.cell_size
+        self.maze_offset = maze_offset
         self.ui = ui_state
         self.frame_buff = frame_buffer
         self.rend_sett = render_setting
@@ -80,7 +84,7 @@ class MapRenderer:
         for r in range(len(self.maze)):
             for c in range(len(self.maze[0])):
                 cell = self.maze[r][c]
-                x, y = cell_to_pixel(r, c, self.cell_size, self.padding)
+                x, y = cell_to_pixel(r, c, self.cell_size, self.maze_offset)
                 self._draw_cell(x, y, cell)
 
         self._fill_logo42(color=self.ui.logo42_color)

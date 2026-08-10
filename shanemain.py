@@ -10,8 +10,8 @@ import math
 def main() -> None:
     # Testing code, all of this needs to be reorganised, but
     # the overall order of instantiation matters for visual things
-    maze_w = 10
-    maze_h = 12
+    maze_w = 35
+    maze_h = 25
     center = (maze_w // 2, maze_h // 2)
     mazegen = MazeGenerator((maze_w, maze_h), False, center, (-1, -1), 1)
     pixel_math = PixelMath()
@@ -20,7 +20,7 @@ def main() -> None:
     start_col, start_row = mazegen.maze_entry
     start = (start_row, start_col)
     player = Player()
-    movement = Movement(start, maze, pixel_math.cell_size, pixel_math.padding)
+    
 
     gums = Gummis(maze, start)
     pinky = Pinky(0, 0)
@@ -57,6 +57,8 @@ def main() -> None:
     }
 
     vis = Visualizer(start, maze, pixel_math, ghosts)
+    movement = Movement(start, maze, vis.get_maze_offset(),
+                        pixel_math.cell_size)
 
     last_openness = 1.0  # starts facing right, fully open
     last_dir = Direction.RIGHT.value

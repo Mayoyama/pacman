@@ -1,6 +1,7 @@
 from .settings import UI_state, RenderSettings, PixelMath, SpriteRenderState
 from .frame_buffer import FrameBuffer
 from .map_rendering import MapRenderer
+from .UI_rendering import HUD
 from .sprite_rendering import Sprites
 import pygame
 
@@ -53,31 +54,38 @@ class Visualizer:
 
         design_w = (self.MAX_DESIGN_COLS * cell_size) + (2 * padding)
         design_h = ((self.MAX_DESIGN_ROWS * cell_size) + (2 * padding)
-                    + self.rend_sett.top_hud_height
-                    + self.rend_sett.btm_hud_height)
+                    + self.rend_sett.top_hud_h
+                    + self.rend_sett.btm_hud_h)
         win_w = min(screen_w, design_w)
         win_h = min(screen_h, design_h)
 
         maze_h = len(maze)
         maze_w = len(maze[0])
         self.frame_buff = FrameBuffer(
-            (maze_w, maze_h), self.rend_sett, pixel_math)
+            (maze_w, maze_h), (self.MAX_DESIGN_COLS, self.MAX_DESIGN_ROWS),
+            self.rend_sett, pixel_math)
         self.map_rend = MapRenderer(
-            maze, self.frame_buff, self.rend_sett, self.ui_state, pixel_math)
+            maze, self.frame_buff, self.rend_sett, self.ui_state, pixel_math,
+            self.get_maze_offset())
 
         self.refresh_static_layer()
 
         self.screen = pygame.display.set_mode((win_w, win_h))
 
-        self.sprites = Sprites(pixel_math)
+        self.sprites = Sprites(pixel_math, self.get_maze_offset())
         self.sprites.build_colored_ghosts(ghosts)
 
         self.running = True
         self.clock = pygame.time.Clock()
 
+        self.hud = HUD(self.rend_sett)
+
     def set_tick(self) -> None:
         """Advances the frame clock by one tick, capped at target_fps."""
         self.clock.tick(self.rend_sett.target_fps)
+
+    def get_maze_offset(self) -> tuple[int, int]:
+        return self.frame_buff.get_maze_surf_center()
 
     def handle_events(self, events: list[pygame.event.Event]) -> None:
         """Processes window-level events, such as closing the window.
@@ -122,4 +130,5 @@ class Visualizer:
         maze_offset = self.frame_buff.get_maze_location()
         self.sprites.render_sprites(self.screen, maze_offset, sprite_state,
                                     died, death_step)
+        self.hud.render_huds(self.screen)
         pygame.display.flip()

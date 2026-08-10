@@ -24,8 +24,10 @@ class RenderSettings(NamedTuple):
     """
 
     target_fps: int = 30
-    top_hud_height: int = 40
-    btm_hud_height: int = 40
+    top_hud_h: int = 200
+    top_hud_w: int = 800
+    btm_hud_h: int = 100
+    btm_hud_w: int = 800
 
 
 class SpriteRenderState(NamedTuple):
