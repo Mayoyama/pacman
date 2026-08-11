@@ -23,9 +23,7 @@ class Visualizer:
     MAX_DESIGN_COLS = 45
     MAX_DESIGN_ROWS = 30
 
-    def __init__(self, start: tuple[int, int],
-                 maze: list[list[int]],
-                 pixel_math: PixelMath,
+    def __init__(self, maze: list[list[int]],
                  ghosts: dict[str, tuple[int, int, int]]) -> None:
         """Set up the pygame window and static assets.
 
@@ -47,7 +45,8 @@ class Visualizer:
         self.ui_state = UI_state()
         self.rend_sett = RenderSettings()
 
-        cell_size, padding = pixel_math
+        self.pixel_math = PixelMath()
+        cell_size, padding = self.pixel_math
         display_info = pygame.display.Info()
         screen_w = int(display_info.current_w * self.SCREEN_FRACTION)
         screen_h = int(display_info.current_h * self.SCREEN_FRACTION)
@@ -63,16 +62,16 @@ class Visualizer:
         maze_w = len(maze[0])
         self.frame_buff = FrameBuffer(
             (maze_w, maze_h), (self.MAX_DESIGN_COLS, self.MAX_DESIGN_ROWS),
-            self.rend_sett, pixel_math)
+            self.rend_sett, self.pixel_math)
         self.map_rend = MapRenderer(
-            maze, self.frame_buff, self.rend_sett, self.ui_state, pixel_math,
-            self.get_maze_offset())
+            maze, self.frame_buff, self.rend_sett, self.ui_state,
+            self.pixel_math, self.get_maze_offset())
 
         self.refresh_static_layer()
 
         self.screen = pygame.display.set_mode((win_w, win_h))
 
-        self.sprites = Sprites(pixel_math, self.get_maze_offset())
+        self.sprites = Sprites(self.pixel_math, self.get_maze_offset())
         self.sprites.build_colored_ghosts(ghosts)
 
         self.running = True

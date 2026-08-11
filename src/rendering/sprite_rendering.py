@@ -203,26 +203,34 @@ class Sprites:
         not yet used here - still pending real frightened-state logic.
         """
         off_x, off_y = maze_offset.topleft
+        pac_x, pac_y = sprite_state.pacpixel_pos
 
+        rm = []
         for r, c in sprite_state.superpacgums:
             cx, cy = cell_center(r, c, self.cell_size, self.maze_offset)
             surf_mid = self.sprites_dict["superpacgum"].get_rect(
                 center=(cx + off_x, cy + off_y))
             target.blit(self.sprites_dict["superpacgum"], surf_mid)
+            if (pac_x, pac_y) == (cx, cy):
+                rm.append((r, c))
+        for cell in rm:
+            sprite_state.superpacgums.remove(cell)
 
+        rm = []
         for r, c in sprite_state.pacgums:
             cx, cy = cell_center(r, c, self.cell_size, self.maze_offset)
             surf_mid = self.sprites_dict["pacgum"].get_rect(
                 center=(cx + off_x, cy + off_y))
             target.blit(self.sprites_dict["pacgum"], surf_mid)
+            if (pac_x, pac_y) == (cx, cy):
+                rm.append((r, c))
+        for cell in rm:
+            sprite_state.pacgums.remove(cell)
 
         for name, surf in self.colored_ghosts.items():
-            r, c = sprite_state.ghost_pos[name]
-            cx, cy = cell_center(r, c, self.cell_size, self.maze_offset)
-            surf_mid = surf.get_rect(center=(cx + off_x, cy + off_y))
+            gx, gy = sprite_state.ghost_pos[name.capitalize()]
+            surf_mid = surf.get_rect(center=(gx + off_x, gy + off_y))
             target.blit(surf, surf_mid)
-
-        pac_x, pac_y = sprite_state.pacpixel_pos
 
         if died:
             img = self.deathsprite_list[death_step]

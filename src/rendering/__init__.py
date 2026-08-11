@@ -1,8 +1,7 @@
 from .visualizer import Visualizer
-from .settings import PixelMath, SpriteRenderState
+from .settings import SpriteRenderState
 
 __all__ = [
     "Visualizer",
-    "PixelMath",
     "SpriteRenderState"
 ]

@@ -1,19 +1,46 @@
-class Player:
+from typing import Any
+
+from .movement import Movement
+
+
+class Player(Movement):
     """Tracks player-owned game state.
 
     Position, movement, and collision belong to Movement, not Player.
     """
 
-    def __init__(self, lives: int = 3) -> None:
+    def __init__(self, maze: Any, lives: int = 3) -> None:
         """Sets up starting lives and invincibility state.
 
         Args:
             lives: Starting life count.
         """
+        start_col, start_row = maze.maze_entry
+        super().__init__(
+            start = (start_row, start_col),
+            maze = maze.maze,
+            maze_offset = maze.vis.get_maze_offset(),
+            cell_size = maze.vis.pixel_math.cell_size
+            )
         self._lives = lives
         self._score = 0
         self._is_invincible = False
         self._name = ""
+
+    def pixel_to_cell(self, x: int, y: int) -> tuple[int, int]:
+        """Converts (x, y) pixel coordinates back to a grid cell's (row, col).
+
+        Args:
+            x: The horizontal pixel coordinate.
+            y: The vertical pixel coordinate.
+
+        Returns:
+            The (row, col) grid indices matching the pixel location.
+        """
+        off_x, off_y = self.maze_offset
+        c = (x - off_x) // self.cell_size
+        r = (y - off_y) // self.cell_size
+        return r, c
 
     def set_name(self) -> None:
         """Prompts for and validates the player's name via stdin.

@@ -13,7 +13,7 @@ class Ghost(ABC):
     research lands.
     """
 
-    def __init__(self, row: int, col: int, 
+    def __init__(self, row: int, col: int,
                  color: tuple[int, int, int]) -> None:
         """Sets up starting position and state flags.
 
@@ -26,37 +26,18 @@ class Ghost(ABC):
         self.start_pos = (row, col)
         self.curr_pos = self.start_pos
         self.next_pos = self.curr_pos
+        self.previous_pos = None
         self.color = color
         self.chase = True
         self.scatter = False
         self.frightened = False
 
-        """
-        [[9, 1, 1, 5, 1, 1, 5, 1, 3, 9, 5, 1, 5, 5, 3],
-        [8, 2, 12, 5, 2, 10, 9, 2, 10, 8, 5, 6, 9, 1, 6],
-        [10, 8, 1, 3, 12, 4, 2, 8, 2, 8, 5, 5, 6, 8, 3],
-        [10, 12, 0, 0, 1, 5, 2, 10, 10, 8, 3, 9, 1, 4, 2],
-        [12, 5, 6, 12, 4, 3, 10, 8, 6, 12, 4, 2, 12, 1, 2],
-        [9, 1, 1, 3, 15, 10, 12, 6, 15, 15, 15, 8, 3, 8, 6],
-        [10, 10, 8, 6, 15, 12, 5, 1, 5, 7, 15, 8, 2, 8, 3],
-        [8, 6, 8, 3, 15, 15, 15, 10, 15, 15, 15, 10, 8, 4, 2],
-        [10, 9, 2, 8, 5, 3, 15, 10, 15, 13, 5, 2, 8, 3, 10],
-        [8, 2, 12, 2, 9, 6, 15, 10, 15, 15, 15, 8, 6, 8, 2],
-        [10, 8, 1, 6, 12, 3, 9, 2, 9, 5, 1, 6, 9, 4, 6],
-        [8, 2, 12, 5, 1, 2, 10, 8, 2, 9, 4, 3, 8, 1, 3],
-        [8, 4, 3, 9, 2, 12, 0, 4, 2, 10, 9, 4, 2, 10, 10],
-        [8, 3, 8, 6, 12, 1, 4, 1, 4, 6, 12, 3, 12, 2, 10],
-        [12, 6, 12, 5, 5, 4, 5, 4, 5, 5, 5, 4, 5, 4, 6]]
-        """
-
     def heuristics(self, target: tuple[int, int], moves: list[tuple[int, int]]
                    ) -> tuple[int, int]:
         """Computes the best move to do based on Manhattan distance
-        
         Args:
             target: The (row, col) cell being pathed toward.
             moves: Candidate (row, col) cells reachable this step.
-
         Returns:
             The (row, col) of the chosen move.
         """
@@ -105,7 +86,43 @@ class Ghost(ABC):
         try:
             return (ghost.curr_pos, ghost.move(maze_state))
         except (AttributeError, TypeError) as e:
-        	raise TypeError("maze or ghost or not in a good type.") from e
+            raise TypeError("maze or ghost or not in a good type.") from e
+
+    def init_pixel_pos(self, maze_state: "MazeState") -> None:
+        """Sets this ghost's pixel_pos to the pixel center of its current
+        cell (curr_pos). Call once per ghost, right after maze_state
+        exists - cell_size/maze_offset live on maze_state.player, so this
+        can't happen inside __init__ itself.
+
+        Args:
+            maze_state: Shared source for cell_center()/cell_size, so
+                pixel math stays identical to the player's own.
+        """
+        self.pixel_pos = maze_state.player.cell_center(*self.curr_pos)
+
+    def advance_pixel_pos(self, maze_state: "MazeState", speed: int) -> None:
+        """Advances pixel_pos by one frame toward next_pos's cell center.
+
+        Once close enough (within speed, on both axes) to count as
+        arrived, snaps pixel_pos exactly onto that cell center and updates
+        curr_pos to match next_pos.
+
+        Args:
+            maze_state: Shared source for cell_center(), so pixel math
+                stays identical to the player's own.
+            speed: Pixels to advance per frame along each axis that still
+                needs to move.
+        """
+        nx, ny = maze_state.player.cell_center(*self.next_pos)
+        cx, cy = self.pixel_pos
+        if abs(cx - nx) == 0 and abs(cy - ny) == 0:
+            self.pixel_pos = (nx, ny)
+            self.curr_pos = self.next_pos
+            self.next_pos = self.move(maze_state)
+            return
+        dx = speed if nx > cx else -speed if nx < cx else 0
+        dy = speed if ny > cy else -speed if ny < cy else 0
+        self.pixel_pos = (cx + dx, cy + dy)
 
 
 class Blinky(Ghost):
@@ -131,15 +148,19 @@ class Blinky(Ghost):
         if self.frightened:
             target = (0, len(maze_state.maze[0]) - 1)
         else:
-            target = maze_state.player.position
+            x, y = maze_state.player.pixel_pos
+            target = maze_state.player.pixel_to_cell(x, y)
         moves = {"NORTH": (-1, 0), "EAST": (0, 1),
                  "SOUTH": (1, 0), "WEST": (0, -1)}
         r, c = self.curr_pos
         reachable = [(r + dr, c + dc)
                      for m, (dr, dc) in moves.items()
                      if self.can_move(m, maze_state.maze)]
+        if len(reachable) > 1 and self.previous_pos in reachable:
+            reachable.remove(self.previous_pos)
         if not reachable:
             return self.curr_pos
+        self.previous_pos = self.curr_pos
         return self.heuristics(target, reachable)
 
 
@@ -165,9 +186,10 @@ class Pinky(Ghost):
         """
         moves = {"NORTH": (-1, 0), "EAST": (0, 1),
                  "SOUTH": (1, 0), "WEST": (0, -1)}
+        x, y = maze_state.player.pixel_pos
+        target = maze_state.player.pixel_to_cell(x, y)
         r, c = self.curr_pos
         direction = maze_state.player.direction
-        row, col = maze_state.player.position
         if direction == Direction.UP:
             step_r, step_c = -1, 0
         elif direction == Direction.DOWN:
@@ -178,16 +200,19 @@ class Pinky(Ghost):
             step_r, step_c = 0, 1
         else:
             step_r, step_c = 0, 0
-        target_row = row + (step_r * 4)
-        target_col = col + (step_c * 4)
+        target_row = target[0] + (step_r * 4)
+        target_col = target[1] + (step_c * 4)
         target = (target_row, target_col)
         if not self.chase:
             target = (0, 0)
         reachable = [(r + dr, c + dc)
                      for m, (dr, dc) in moves.items()
                      if self.can_move(m, maze_state.maze)]
+        if len(reachable) > 1 and self.previous_pos in reachable:
+            reachable.remove(self.previous_pos)
         if not reachable:
             return self.curr_pos
+        self.previous_pos = self.curr_pos
         return self.heuristics(target, reachable)
 
 
@@ -215,10 +240,11 @@ class Inky(Ghost):
         """
         moves = {"NORTH": (-1, 0), "EAST": (0, 1),
                  "SOUTH": (1, 0), "WEST": (0, -1)}
+        x, y = maze_state.player.pixel_pos
+        target = maze_state.player.pixel_to_cell(x, y)
         r, c = self.curr_pos
         direction = maze_state.player.direction
         blinky_row, blinky_col = maze_state.blinky.curr_pos
-        row, col = maze_state.player.position
         if direction == Direction.UP:
             step_r, step_c = -1, 0
         elif direction == Direction.DOWN:
@@ -229,8 +255,8 @@ class Inky(Ghost):
             step_r, step_c = 0, 1
         else:
             step_r, step_c = 0, 0
-        target_row = row + (step_r * 2)
-        target_col = col + (step_c * 2)
+        target_row = target[0] + (step_r * 2)
+        target_col = target[1] + (step_c * 2)
         # Compute the vector between Blinky et ce pivot
         vector_row = target_row - blinky_row
         vector_col = target_col - blinky_col
@@ -246,8 +272,11 @@ class Inky(Ghost):
         reachable = [(r + dr, c + dc)
                      for m, (dr, dc) in moves.items()
                      if self.can_move(m, maze_state.maze)]
+        if len(reachable) > 1 and self.previous_pos in reachable:
+            reachable.remove(self.previous_pos)
         if not reachable:
             return self.curr_pos
+        self.previous_pos = self.curr_pos
         return self.heuristics(target, reachable)
 
 
@@ -264,6 +293,10 @@ class Clyde(Ghost):
         (bottom-left).
         """
 
+    def get_dist(self, target: tuple[int, int]) -> int:
+        return int(sqrt(((self.curr_pos[0] - target[0]) ** 2) +
+                        ((self.curr_pos[1] - target[1]) ** 2)))
+
     def move(self, maze_state: "MazeState") -> tuple[int, int]:
         """
         compute the best move to do by the heuristic
@@ -272,15 +305,19 @@ class Clyde(Ghost):
         Returns:
             (tuple[int, int]) the best move to do
         """
+        x, y = maze_state.player.pixel_pos
+        target = maze_state.player.pixel_to_cell(x, y)
         moves = {"NORTH": (-1, 0), "EAST": (0, 1),
                  "SOUTH": (1, 0), "WEST": (0, -1)}
         r, c = self.curr_pos
-        target = maze_state.player.position
-        if self.get_dist() < 8 or not self.chase:
+        if self.get_dist(target) < 8 or not self.chase:
             target = (len(maze_state.maze) - 1, 0)
         reachable = [(r + dr, c + dc)
                      for m, (dr, dc) in moves.items()
                      if self.can_move(m, maze_state.maze)]
+        if len(reachable) > 1 and self.previous_pos in reachable:
+            reachable.remove(self.previous_pos)
         if not reachable:
             return self.curr_pos
+        self.previous_pos = self.curr_pos
         return self.heuristics(target, reachable)
