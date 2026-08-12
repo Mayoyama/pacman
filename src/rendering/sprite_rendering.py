@@ -2,6 +2,7 @@ from pathlib import Path
 from .rendering_utils import cell_center, fill
 from .settings import PixelMath, SpriteRenderState
 import pygame
+import math
 
 
 class Sprites:
@@ -35,6 +36,11 @@ class Sprites:
         self.frightened_dark: pygame.Surface = \
             self.apply_ghost_color(self.sprites_dict["base_ghost"],
                                    (0, 0, 140))
+
+        # Pacman starts facing right, fully open
+        self.last_openness: float = 1.0
+        self.last_direction = "right"
+        self.mouth_state = "open"
 
     def _load_sprites(self) -> None:
         """Loads all sprite images into self.sprites_dict, falling back
@@ -205,38 +211,66 @@ class Sprites:
         off_x, off_y = maze_offset.topleft
         pac_x, pac_y = sprite_state.pacpixel_pos
 
-        rm = []
         for r, c in sprite_state.superpacgums:
             cx, cy = cell_center(r, c, self.cell_size, self.maze_offset)
             surf_mid = self.sprites_dict["superpacgum"].get_rect(
                 center=(cx + off_x, cy + off_y))
             target.blit(self.sprites_dict["superpacgum"], surf_mid)
-            if (pac_x, pac_y) == (cx, cy):
-                rm.append((r, c))
-        for cell in rm:
-            sprite_state.superpacgums.remove(cell)
 
-        rm = []
         for r, c in sprite_state.pacgums:
             cx, cy = cell_center(r, c, self.cell_size, self.maze_offset)
             surf_mid = self.sprites_dict["pacgum"].get_rect(
                 center=(cx + off_x, cy + off_y))
             target.blit(self.sprites_dict["pacgum"], surf_mid)
-            if (pac_x, pac_y) == (cx, cy):
-                rm.append((r, c))
-        for cell in rm:
-            sprite_state.pacgums.remove(cell)
 
         for name, surf in self.colored_ghosts.items():
-            gx, gy = sprite_state.ghost_pos[name.capitalize()]
-            surf_mid = surf.get_rect(center=(gx + off_x, gy + off_y))
-            target.blit(surf, surf_mid)
+            gx, gy = sprite_state.ghost_pos[name]
+            if sprite_state.scared_timer[name] > 0:
+                if sprite_state.scared_timer[name] < 120:
+                    cycle_frames = 10
+                    fraction = ((sprite_state.scared_timer[name]
+                                % cycle_frames) / cycle_frames)
+                    scared_math = math.sin(math.pi * fraction)
+                    if scared_math < 2 / 5 :
+                        scared_frame = self.frightened_dark
+                    elif scared_math < 4 / 5:
+                        scared_frame = self.frightened_bright
+                    else:
+                        scared_frame = self.sprites_dict["base_ghost"]
+                    surf_mid = scared_frame.get_rect(center=(gx + off_x,
+                                                             gy + off_y))
+                    target.blit(scared_frame, surf_mid)
+                else:
+                    surf_mid = self.frightened_dark.get_rect(
+                        center=(gx + off_x, gy + off_y))
+                    target.blit(self.frightened_dark, surf_mid)
+            else:
+                surf_mid = surf.get_rect(center=(gx + off_x, gy + off_y))
+                target.blit(surf, surf_mid)
+
+        if sprite_state.player_direction != "paused":
+            self.last_direction = sprite_state.player_direction
+            px, py = sprite_state.pacpixel_pos
+            cx, cy = cell_center(*sprite_state.player_pos, self.cell_size, self.maze_offset)
+            distance = abs(px - cx) + abs(py - cy)
+            fraction = ((self.cell_size - distance)
+                        / (self.cell_size - sprite_state.tolerance))
+            fraction = max(0.0, min(1.0, fraction))
+            self.last_openness = math.sin(math.pi * fraction)
+
+            if self.last_openness < 0.33:
+                self.mouth_state = "closed"
+            elif self.last_openness < 0.66:
+                self.mouth_state = "half"
+            else:
+                self.mouth_state = "open"
+        # else: leave last_openness frozen at whatever it was last
 
         if died:
             img = self.deathsprite_list[death_step]
         else:
             mouth_index = {"closed": 0, "half": 1, "open": 2}
-            img = self.pacsprite_dict[sprite_state.last_direction][
-                mouth_index[sprite_state.mouth_state]]
+            img = self.pacsprite_dict[self.last_direction][
+                mouth_index[self.mouth_state]]
         surf_mid = img.get_rect(center=(pac_x + off_x, pac_y + off_y))
         target.blit(img, surf_mid)

@@ -131,3 +131,8 @@ class Visualizer:
                                     died, death_step)
         self.hud.render_huds(self.screen)
         pygame.display.flip()
+
+    def reset_pac_sprite(self, direction: str) -> None:
+        self.sprites.last_openness = 1.0
+        self.sprites.last_direction = direction
+        self.sprites.mouth_state = "open"

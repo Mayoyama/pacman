@@ -2,7 +2,7 @@ class Gummis:
     """Tracks which cells still hold a pacgum or super pacgum."""
 
     def __init__(self, maze: list[list[int]],
-                 start: tuple[int, int]) -> None:
+                 start: tuple[int, int], gum_count: int) -> None:
         """Places super pacgums at the four corners, pacgums everywhere else.
 
         Args:

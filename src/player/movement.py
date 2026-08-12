@@ -126,7 +126,7 @@ class Movement:
         """
         self.buffer_dir = direction
 
-    def _is_centered(self) -> bool:
+    def is_centered(self) -> bool:
         """Checks whether pixel_pos is within tolerance of the current
         cell's center.
 
@@ -148,7 +148,7 @@ class Movement:
         wall-blocked; otherwise keeps moving in self.direction unless
         that is wall-blocked, in which case movement stops.
         """
-        if self._is_centered():
+        if self.is_centered():
             if self.can_move(self.buffer_dir):
                 self.direction = self.buffer_dir
             elif not self.can_move(self.direction):

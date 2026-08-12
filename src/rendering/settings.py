@@ -48,12 +48,14 @@ class SpriteRenderState(NamedTuple):
             "closed"/"half"/"open".
     """
 
-    last_direction: str
+    player_direction: str
+    player_pos: tuple[int, int]
     ghost_pos: dict[str, tuple[int, int]]
     superpacgums: set[tuple[int, int]]
     pacgums: set[tuple[int, int]]
     pacpixel_pos: tuple[int, int]
-    mouth_state: str
+    scared_timer: dict[str, int]
+    tolerance: int
 
 
 @dataclass

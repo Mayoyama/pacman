@@ -45,8 +45,9 @@ def scores_parser(filename: str) -> None:
 
 
 def parsing() -> Configs:
-    if not Path(".venv/lib/python3.10/site-packages/mazegenerator"
-                ).is_dir():
+    try:
+        import mazegenerator  # noqa: F401
+    except ImportError:
         raise ImportError("No import of mazegenerator known")
     if len(sys.argv) != 2:
         raise ValueError("Wrong way to run the program")

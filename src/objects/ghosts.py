@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from math import sqrt
+from sys import stderr
 from random import randint
 from typing import TYPE_CHECKING, Any
 from src.player import Direction
@@ -31,6 +32,7 @@ class Ghost(ABC):
         self.chase = True
         self.scatter = False
         self.frightened = False
+        self.scared_timer = 0
 
     def heuristics(self, target: tuple[int, int], moves: list[tuple[int, int]]
                    ) -> tuple[int, int]:
@@ -123,6 +125,23 @@ class Ghost(ABC):
         dx = speed if nx > cx else -speed if nx < cx else 0
         dy = speed if ny > cy else -speed if ny < cy else 0
         self.pixel_pos = (cx + dx, cy + dy)
+
+    def set_frightened_status(self, frames: int = 300) -> None:
+        self.frightened = True
+        self.scared_timer = frames
+
+    def handle_frightened_status(self) -> int:
+        if self.scared_timer > 0:
+            self.scared_timer -= 1
+            if self.scared_timer == 0:
+                self.frightened = False
+            return self.scared_timer
+        else:
+            print("handle_frightened_status: scared timer already 0",
+                  file=stderr)
+            return -1
+            
+            
 
 
 class Blinky(Ghost):

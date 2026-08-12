@@ -9,34 +9,25 @@ def main() -> None:
     maze_level = 0
     lv1_maze_w = config.levels[maze_level].width
     lv1_maze_h = config.levels[maze_level].height
-    maze = MazeState((lv1_maze_w, lv1_maze_h), config.seed)
+    maze = MazeState((lv1_maze_w, lv1_maze_h), config)
     start_col, start_row = maze.maze_entry
     start = (start_row, start_col)
-    gums = Gummis(maze.maze, start)
 
+    scared_timers: dict[str, int] = {}
+    ghost_pos: dict[str, tuple[int, int]] = {}
     ghosts = (maze.blinky, maze.inky, maze.pinky, maze.clyde)
     for ghost in ghosts:
+        scared_timers[ghost.name] = 0
         ghost.init_pixel_pos(maze)
+        ghost_pos[ghost.name] = ghost.pixel_pos
 
-    ghost_pos: dict[str, tuple[int, int]] = {
-        "Blinky": maze.blinky.pixel_pos,
-        "Pinky": maze.pinky.pixel_pos,
-        "Inky": maze.inky.pixel_pos,
-        "Clyde": maze.clyde.pixel_pos,
-    }
 
-    ghost_speed_factor: float = 1.0
-    ghost_speed = int(maze.player.speed * ghost_speed_factor)
-    collision_threshhold = 12
     died = False
     death_step = 0
     death_timer = 0
     death_frames: list[int] = [15, 7, 5, 3, 1, 90]
 
-    # Pacman starts facing right, fully open
-    last_openness = 1.0
-    last_dir = Direction.RIGHT.value
-    while maze.vis.running and maze.player.get_lives():
+    while maze.vis.running:
         maze.vis.set_tick()
         events = pygame.event.get()
         if died:
@@ -46,59 +37,50 @@ def main() -> None:
                     death_step += 1
                 else:
                     death_timer += 1
-
+        
             if death_step >= len(death_frames):
                 maze.player.direction = Direction.PAUSED
                 maze.player.buffer_dir = Direction.PAUSED
                 maze.player.position = start
                 maze.player.pixel_pos = maze.player.cell_center(*start)
-                last_openness = 1.0
-                last_dir = Direction.RIGHT.value
+                maze.vis.reset_pac_sprite(Direction.RIGHT.value)
                 died = False
                 death_step = 0
                 death_timer = 0
+                if not maze.player.get_lives():
+                    break
         else:
             direction = check_keypress(events)
             if direction is not None:
                 maze.player.set_desired_direction(direction)
             maze.player.update()  # This must occur BEFORE other animat logic
 
+            maze.handle_eaten_gums()
+
             for ghost in ghosts:
-                ghost.advance_pixel_pos(maze, ghost_speed)
-                ghost_pos[ghost.name.capitalize()] = ghost.pixel_pos
+                ghost.advance_pixel_pos(maze, maze.ghost_speed)
+                ghost_pos[ghost.name] = ghost.pixel_pos
+                if ghost.frightened:
+                    scared_time = ghost.handle_frightened_status()
+                    scared_timers[ghost.name] = scared_time
 
             for ghost in ghosts:
                 if check_collision(ghost.pixel_pos, maze.player.pixel_pos,
-                                   collision_threshhold):
-                    died = True
-                    maze.player.decrease_lives()
-                    break
+                                   maze.collision_threshhold):
+                    if ghost.frightened:
+                        pass
+                    else:
+                        died = True
+                        maze.player.decrease_lives()
+                        break
 
-            if maze.player.direction != Direction.PAUSED:
-                last_dir = maze.player.direction.value
-                px, py = maze.player.pixel_pos
-                cx, cy = maze.player.cell_center(*maze.player.position)
-                distance = abs(px - cx) + abs(py - cy)
-                fraction = ((maze.player.cell_size - distance)
-                            / (maze.player.cell_size - maze.player.tolerance))
-                fraction = max(0.0, min(1.0, fraction))
-                last_openness = math.sin(math.pi * fraction)
-            # else: leave last_openness frozen at whatever it was last
-
-            if last_openness < 0.33:
-                mouth_state = "closed"
-            elif last_openness < 0.66:
-                mouth_state = "half"
-            else:
-                mouth_state = "open"
-
-        sprite_state = SpriteRenderState(last_dir, ghost_pos,
-                                         gums.superpacgums, gums.pacgums,
-                                         maze.player.pixel_pos, mouth_state)
+        sprite_state = SpriteRenderState(
+            maze.player.direction.value, maze.player.position, ghost_pos,
+            maze.gummis.superpacgums, maze.gummis.pacgums,
+            maze.player.pixel_pos, scared_timers, maze.player.tolerance)
 
         maze.vis.handle_events(events)
         maze.vis.render_frame(sprite_state, died, death_step)
-
 
     # PLACEHOLDER: will keep window open after lives = 0
     while maze.vis.running:
