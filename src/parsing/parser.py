@@ -2,6 +2,7 @@ import sys
 import json
 from pathlib import Path
 from random import randint
+from pydantic import ValidationError 
 
 from .models import Configs, Score, LevelConfig
 from .utils import load_content
@@ -19,9 +20,10 @@ def configs_parser(filename: str) -> Configs:
     while 1:
         try:
             return Configs(**configs)
-        except Exception as e:
+        except ValidationError as e:
             for error in e.errors():
-                print(f"WARNING: invalid value for '{error['loc'][-1]}'")
+                print(f"WARNING: invalid value for '{error['loc'][-1]}'",
+                      file=sys.stderr)
                 if error["loc"][0] != "levels":
                     configs.pop(error["loc"][0])
                 else:
@@ -46,7 +48,7 @@ def scores_parser(filename: str) -> None:
 
 def parsing() -> Configs:
     try:
-        import mazegenerator  # noqa: F401
+        import mazegenerator  # noqa: F401 # type: ignore[import-not-found]
     except ImportError:
         raise ImportError("No import of mazegenerator known")
     if len(sys.argv) != 2:
@@ -55,9 +57,9 @@ def parsing() -> Configs:
     if not file.is_file() or file.suffix != ".json":
         file = Path("configs.json")
         file.touch()
-        print("Configuration file is not a json file")
-    configs = configs_parser(file)
-    ids = []
+        print("Configuration file is not a json file", file=sys.stderr)
+    configs = configs_parser(str(file))
+    ids: list[int] = []
     for level in configs.levels:
         level.level_id = len(ids) + 1
         ids.append(level.level_id)
@@ -67,13 +69,19 @@ def parsing() -> Configs:
             ids.append(lvl_id)
             configs.levels.append(LevelConfig(
                 level_id=lvl_id,
-                width=randint(10, 100),
-                height=randint(10, 10)
+                width=randint(10, 31),
+                height=randint(10, 31)
             ))
-    if not configs.highscore_filename.is_file() or \
-       configs.highscore_filename.suffix != ".json":
-        print("WARNING:"
-              "'highscore_filename' is not an existing json file")
+    for level in configs.levels:
+        if level.width % 2 == 0:
+            level.width -= 1
+        if level.height % 2 == 0:
+            level.height -= 1
+    if (configs.highscore_filename is None
+        or not configs.highscore_filename.is_file()
+        or configs.highscore_filename.suffix != ".json"):
+        print(f"WARNING: {configs.highscore_filename} is not an existing "
+              "json file", file=sys.stderr)
         configs.highscore_filename = Path("best_scores.json")
         configs.highscore_filename.touch()
     scores_parser(str(configs.highscore_filename))

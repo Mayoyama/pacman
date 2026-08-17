@@ -1,4 +1,5 @@
 import pygame
+from pathlib import Path
 
 
 def cell_to_pixel(r: int, c: int, cell_size: int,
@@ -53,7 +54,7 @@ def fill(base: pygame.Surface,
         alpha: Alpha value (0-255) applied to every pixel.
     """
 
-    dst = memoryview(base.get_buffer())  # type: ignore[arg-type]
+    dst = memoryview(base.get_buffer())
     pitch = base.get_pitch()
     w, h = base.get_size()
     r, g, b = color
@@ -65,3 +66,23 @@ def fill(base: pygame.Surface,
             dst[offset + 2] = r
             dst[offset + 3] = alpha
     dst.release()
+
+ 
+def make_placeholder(size: tuple[int, int],
+                      color: tuple[int, int, int]) -> pygame.Surface:
+    """Plain filled square, used when a sprite PNG fails to load."""
+    surf = pygame.Surface(size, pygame.SRCALPHA, 32)
+    fill(surf, color)
+    return surf
+
+
+def load_image_or_fallback(caller: str, path: Path,
+                            fallback: pygame.Surface) -> pygame.Surface:
+    """Loads `path` as a Surface; returns `fallback` if unreadable."""
+    try:
+        return pygame.image.load(path).convert_alpha()
+    except (FileNotFoundError, IsADirectoryError, PermissionError) as e:
+        print(f"Rendering error in {caller} loading {path}: {e}")
+        return fallback
+
+

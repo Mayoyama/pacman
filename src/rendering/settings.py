@@ -54,7 +54,8 @@ class SpriteRenderState(NamedTuple):
     superpacgums: set[tuple[int, int]]
     pacgums: set[tuple[int, int]]
     pacpixel_pos: tuple[int, int]
-    scared_timer: dict[str, int]
+    scared_timers: dict[str, int]
+    respawn_timers: dict[str, int]
     tolerance: int
 
 
@@ -73,3 +74,10 @@ class UI_state:
     logo42_color: tuple[int, int, int] = (0, 255, 150)  # (255, 255, 255)
     animate_sprite: bool = False
     show_sprite: bool = False
+
+
+class MenuState(NamedTuple):
+    main_menu_items: list[str]
+    options_menu_items: dict[str, bool]
+    menu_pos: int
+    curr_menu: str

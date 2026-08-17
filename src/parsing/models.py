@@ -4,8 +4,8 @@ from pathlib import Path
 
 class LevelConfig(BaseModel):
     level_id: int = Field(ge=0, default=1)
-    width: int = Field(ge=10, le=100, default=10)
-    height: int = Field(ge=10, le=100, default=10)
+    width: int = Field(ge=10, le=31, default=10)
+    height: int = Field(ge=10, le=31, default=10)
 
 
 class Configs(BaseModel):

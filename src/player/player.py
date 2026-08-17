@@ -17,10 +17,10 @@ class Player(Movement):
         """
         start_col, start_row = maze.maze_entry
         super().__init__(
-            start = (start_row, start_col),
-            maze = maze.maze,
-            maze_offset = maze.vis.get_maze_offset(),
-            cell_size = maze.vis.pixel_math.cell_size
+            start=(start_row, start_col),
+            maze=maze.maze,
+            maze_offset=maze.vis.get_maze_offset(),
+            cell_size=maze.vis.pixel_math.cell_size
             )
         self._lives = lives
         self._score = 0

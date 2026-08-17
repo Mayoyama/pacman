@@ -20,7 +20,7 @@ def load_content(filename: str) -> str:
     return content
 
 
-def write_scores(filename: str, player: Any, level: int):
+def write_scores(filename: str, player: Any, level: int) -> None:
     content = load_content(filename)
     score = Score(
         name=player._name,

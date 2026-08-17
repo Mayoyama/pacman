@@ -1,9 +1,9 @@
 from pathlib import Path
-from .rendering_utils import fill
+from .rendering_utils import fill, make_placeholder, load_image_or_fallback
 from .settings import RenderSettings
 import pygame
 
-ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+
 
 
 class HUD:
@@ -38,27 +38,15 @@ class HUD:
         fill(self.top_surf, (125, 125, 0))
         fill(self.btm_surf, (0, 200, 200))
 
-        logo = self._load_logo(ASSETS_DIR / "pacman_logo.png")
-        if logo is not None:
-            logo_rect = logo.get_rect(
-                center=(self.top_hud_w // 2, self.top_hud_h // 2))
-            self.top_surf.blit(logo, logo_rect)
+        ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
-    @staticmethod
-    def _load_logo(path: Path) -> pygame.Surface | None:
-        """Loads the PACMAN title banner at its native size - unscaled,
-        since pygame.transform has no MLX equivalent. Returns None (the
-        placeholder fill is left showing on its own) if the file can't
-        be read.
+        logo_backup = make_placeholder((100, 100), (255, 255, 0))
 
-        Args:
-            path: Location of the logo PNG.
-        """
-        try:
-            return pygame.image.load(path).convert_alpha()
-        except (FileNotFoundError, IsADirectoryError, PermissionError) as e:
-            print(f"HUD class error loading {path}: {e}")
-            return None
+        self.logo = load_image_or_fallback(self.__class__.__name__,
+                                      ASSETS_DIR / "pacman_logo.png", logo_backup)
+        logo_rect = self.logo.get_rect(
+            center=(self.top_hud_w // 2, self.top_hud_h // 2))
+        self.top_surf.blit(self.logo, logo_rect)
 
     def render_huds(self, surface: pygame.Surface) -> None:
         """Positions and blits the top/bottom HUD surfaces onto `surface`.

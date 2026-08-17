@@ -1,5 +1,6 @@
 from pathlib import Path
-from .rendering_utils import cell_center, fill
+from .rendering_utils import (cell_center, make_placeholder,
+                              load_image_or_fallback)
 from .settings import PixelMath, SpriteRenderState
 import pygame
 import math
@@ -58,9 +59,9 @@ class Sprites:
         # ghost_placeholder must stay pure white - apply_ghost_color only
         # recolors exact white pixels, so any other color would silently
         # mis-render every ghost.
-        ghost_placeholder = self._make_placeholder((20, 20), (255, 255, 255))
-        gummy_placeholder = self._make_placeholder((20, 20), (255, 255, 0))
-        pacman_placeholder = self._make_placeholder((20, 20), (255, 255, 0))
+        ghost_placeholder = make_placeholder((20, 20), (255, 255, 255))
+        gummy_placeholder = make_placeholder((20, 20), (255, 255, 0))
+        pacman_placeholder = make_placeholder((20, 20), (255, 255, 0))
 
         self.sprites_dict: dict[str, pygame.Surface] = {}
 
@@ -85,31 +86,15 @@ class Sprites:
         ]
 
         for name, filename, placeholder in specs:
-            self.sprites_dict[name] = self._load_image_or_fallback(
+            self.sprites_dict[name] = load_image_or_fallback(
+                self.__class__.__name__,
                 ASSETS_DIR / filename, placeholder)
 
         for direction in ("up", "down", "left", "right"):
             self.sprites_dict[f"pac_{direction}_1"] = \
                 self.sprites_dict["pac_closed"]
 
-    @staticmethod
-    def _make_placeholder(
-            size: tuple[int, int],
-            color: tuple[int, int, int]) -> pygame.Surface:
-        """Plain filled square, used when a sprite PNG fails to load."""
-        surf = pygame.Surface(size, pygame.SRCALPHA, 32)
-        fill(surf, color)
-        return surf
 
-    @staticmethod
-    def _load_image_or_fallback(
-            path: Path, fallback: pygame.Surface) -> pygame.Surface:
-        """Loads `path` as a Surface; returns `fallback` if unreadable."""
-        try:
-            return pygame.image.load(path).convert_alpha()
-        except (FileNotFoundError, IsADirectoryError, PermissionError) as e:
-            print(f"Sprites class error loading {path}: {e}")
-            return fallback
 
     def apply_ghost_color(self, ghost_surf: pygame.Surface,
                           color: tuple[int, int, int]) -> pygame.Surface:
@@ -122,8 +107,8 @@ class Sprites:
         """
 
         new_surf = pygame.Surface(ghost_surf.get_size(), pygame.SRCALPHA, 32)
-        src = memoryview(ghost_surf.get_buffer())  # type: ignore[arg-type]
-        dst = memoryview(new_surf.get_buffer())  # type: ignore[arg-type]
+        src = memoryview(ghost_surf.get_buffer())
+        dst = memoryview(new_surf.get_buffer())
         pitch = ghost_surf.get_pitch()
         w, h = ghost_surf.get_size()
         for y in range(h):
@@ -225,13 +210,15 @@ class Sprites:
 
         for name, surf in self.colored_ghosts.items():
             gx, gy = sprite_state.ghost_pos[name]
-            if sprite_state.scared_timer[name] > 0:
-                if sprite_state.scared_timer[name] < 120:
+            if sprite_state.respawn_timers[name] > 0:
+                continue
+            elif sprite_state.scared_timers[name] > 0:
+                if sprite_state.scared_timers[name] < 120:
                     cycle_frames = 10
-                    fraction = ((sprite_state.scared_timer[name]
+                    fraction = ((sprite_state.scared_timers[name]
                                 % cycle_frames) / cycle_frames)
                     scared_math = math.sin(math.pi * fraction)
-                    if scared_math < 2 / 5 :
+                    if scared_math < 2 / 5:
                         scared_frame = self.frightened_dark
                     elif scared_math < 4 / 5:
                         scared_frame = self.frightened_bright
@@ -251,7 +238,8 @@ class Sprites:
         if sprite_state.player_direction != "paused":
             self.last_direction = sprite_state.player_direction
             px, py = sprite_state.pacpixel_pos
-            cx, cy = cell_center(*sprite_state.player_pos, self.cell_size, self.maze_offset)
+            cx, cy = cell_center(*sprite_state.player_pos, self.cell_size,
+                                 self.maze_offset)
             distance = abs(px - cx) + abs(py - cy)
             fraction = ((self.cell_size - distance)
                         / (self.cell_size - sprite_state.tolerance))

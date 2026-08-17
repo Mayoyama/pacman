@@ -1,6 +1,8 @@
-from .settings import UI_state, RenderSettings, PixelMath, SpriteRenderState
+from .settings import (UI_state, RenderSettings, PixelMath,
+                       SpriteRenderState, MenuState)
 from .frame_buffer import FrameBuffer
 from .map_rendering import MapRenderer
+from .menu_rendering import MenuRender
 from .UI_rendering import HUD
 from .sprite_rendering import Sprites
 import pygame
@@ -24,7 +26,9 @@ class Visualizer:
     MAX_DESIGN_ROWS = 30
 
     def __init__(self, maze: list[list[int]],
-                 ghosts: dict[str, tuple[int, int, int]]) -> None:
+                 ghosts: dict[str, tuple[int, int, int]],
+                 highscore_filename: str,
+                 screen_size: tuple[int, int]) -> None:
         """Set up the pygame window and static assets.
 
         cell_size/padding are fixed for the whole game, so the window
@@ -47,9 +51,9 @@ class Visualizer:
 
         self.pixel_math = PixelMath()
         cell_size, padding = self.pixel_math
-        display_info = pygame.display.Info()
-        screen_w = int(display_info.current_w * self.SCREEN_FRACTION)
-        screen_h = int(display_info.current_h * self.SCREEN_FRACTION)
+        
+        screen_w = int(screen_size[0] * self.SCREEN_FRACTION)
+        screen_h = int(screen_size[1] * self.SCREEN_FRACTION)
 
         design_w = (self.MAX_DESIGN_COLS * cell_size) + (2 * padding)
         design_h = ((self.MAX_DESIGN_ROWS * cell_size) + (2 * padding)
@@ -70,6 +74,8 @@ class Visualizer:
         self.refresh_static_layer()
 
         self.screen = pygame.display.set_mode((win_w, win_h))
+
+        self.menu_rend = MenuRender(win_w, win_h, highscore_filename)
 
         self.sprites = Sprites(self.pixel_math, self.get_maze_offset())
         self.sprites.build_colored_ghosts(ghosts)
@@ -136,3 +142,16 @@ class Visualizer:
         self.sprites.last_openness = 1.0
         self.sprites.last_direction = direction
         self.sprites.mouth_state = "open"
+
+    def render_menus(self, menu_data: MenuState) -> None:
+        if menu_data.curr_menu == "MAIN":
+            self.menu_rend.render_main_menu(self.screen,
+                                            menu_data.main_menu_items,
+                                            menu_data.menu_pos)
+        elif menu_data.curr_menu == "OPTIONS":
+            self.menu_rend.render_options_menu(self.screen,
+                                               menu_data.options_menu_items,
+                                               menu_data.menu_pos)
+        elif menu_data.curr_menu == "HIGH SCORES":
+            pass
+        pygame.display.flip()

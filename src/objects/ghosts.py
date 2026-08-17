@@ -2,10 +2,17 @@ from abc import ABC, abstractmethod
 from math import sqrt
 from sys import stderr
 from random import randint
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 from src.player import Direction
 if TYPE_CHECKING:
     from src.game_logic.mazestate import MazeState
+
+
+class GhostStatus(Enum):
+    CHASE = "chase"
+    SCATTER = "scatter"
+    FRIGHTENED = "frightened"
 
 
 class Ghost(ABC):
@@ -27,12 +34,25 @@ class Ghost(ABC):
         self.start_pos = (row, col)
         self.curr_pos = self.start_pos
         self.next_pos = self.curr_pos
-        self.previous_pos = None
+        self.previous_pos: tuple[int, int] | None = None
         self.color = color
-        self.chase = True
-        self.scatter = False
-        self.frightened = False
+        self._mode = GhostStatus.CHASE
+        self.dead = False
         self.scared_timer = 0
+        self.freeze_timer = 0
+        self.scatter_timer = 0
+
+    @property
+    def chase(self) -> bool:
+        return self._mode == GhostStatus.CHASE
+
+    @property
+    def scatter(self) -> bool:
+        return self._mode == GhostStatus.SCATTER
+
+    @property
+    def frightened(self) -> bool:
+        return self._mode == GhostStatus.FRIGHTENED
 
     def heuristics(self, target: tuple[int, int], moves: list[tuple[int, int]]
                    ) -> tuple[int, int]:
@@ -43,7 +63,7 @@ class Ghost(ABC):
         Returns:
             The (row, col) of the chosen move.
         """
-        h = 1000
+        h: float = 1000
         next: list[tuple[int, int]] = []
         for move in moves:
             score = sqrt(((move[0] - target[0]) ** 2) +
@@ -117,31 +137,52 @@ class Ghost(ABC):
         """
         nx, ny = maze_state.player.cell_center(*self.next_pos)
         cx, cy = self.pixel_pos
-        if abs(cx - nx) == 0 and abs(cy - ny) == 0:
-            self.pixel_pos = (nx, ny)
+        dx = min(speed, abs(nx - cx))
+        dy = min(speed, abs(ny - cy))
+        if nx < cx:
+            dx = -dx
+        if ny < cy:
+            dy = -dy
+        cx += dx
+        cy += dy
+        self.pixel_pos = (cx, cy)
+        if cx == nx and cy == ny:
             self.curr_pos = self.next_pos
             self.next_pos = self.move(maze_state)
-            return
-        dx = speed if nx > cx else -speed if nx < cx else 0
-        dy = speed if ny > cy else -speed if ny < cy else 0
-        self.pixel_pos = (cx + dx, cy + dy)
 
     def set_frightened_status(self, frames: int = 300) -> None:
-        self.frightened = True
+        self._mode = GhostStatus.FRIGHTENED
         self.scared_timer = frames
 
-    def handle_frightened_status(self) -> int:
+    def handle_frightened_status(self, reset: bool = False) -> int:
+        if reset:
+            self._mode = GhostStatus.CHASE
+            self.scared_timer = 0
+            return 0
         if self.scared_timer > 0:
             self.scared_timer -= 1
             if self.scared_timer == 0:
-                self.frightened = False
+                self._mode = GhostStatus.CHASE
             return self.scared_timer
         else:
             print("handle_frightened_status: scared timer already 0",
                   file=stderr)
             return -1
-            
-            
+
+    def set_scatter_mode(self, frames: int = 450) -> None:
+        self._mode = GhostStatus.SCATTER
+        self.scatter_timer = frames
+
+    def handle_scatter_mode(self) -> int:
+        if self.scatter_timer > 0:
+            self.scatter_timer -= 1
+            if self.scatter_timer == 0:
+                self._mode = GhostStatus.CHASE
+            return self.scatter_timer
+        else:
+            print("handle_scatter_status: scatter timer already 0",
+                  file=stderr)
+            return -1
 
 
 class Blinky(Ghost):
@@ -164,8 +205,8 @@ class Blinky(Ghost):
         Returns:
             (tuple[int, int]) the best move to do
         """
-        if self.frightened:
-            target = (0, len(maze_state.maze[0]) - 1)
+        if self.frightened or self.dead or self.scatter:
+            target = (0, len(maze_state._maze[0]) - 1)
         else:
             x, y = maze_state.player.pixel_pos
             target = maze_state.player.pixel_to_cell(x, y)
@@ -174,7 +215,7 @@ class Blinky(Ghost):
         r, c = self.curr_pos
         reachable = [(r + dr, c + dc)
                      for m, (dr, dc) in moves.items()
-                     if self.can_move(m, maze_state.maze)]
+                     if self.can_move(m, maze_state._maze)]
         if len(reachable) > 1 and self.previous_pos in reachable:
             reachable.remove(self.previous_pos)
         if not reachable:
@@ -222,11 +263,11 @@ class Pinky(Ghost):
         target_row = target[0] + (step_r * 4)
         target_col = target[1] + (step_c * 4)
         target = (target_row, target_col)
-        if not self.chase:
+        if not self.chase or self.dead:
             target = (0, 0)
         reachable = [(r + dr, c + dc)
                      for m, (dr, dc) in moves.items()
-                     if self.can_move(m, maze_state.maze)]
+                     if self.can_move(m, maze_state._maze)]
         if len(reachable) > 1 and self.previous_pos in reachable:
             reachable.remove(self.previous_pos)
         if not reachable:
@@ -283,14 +324,14 @@ class Inky(Ghost):
         target_row = blinky_row + (vector_row * 2)
         target_col = blinky_col + (vector_col * 2)
         target = (target_row, target_col)
-        if not self.chase:
-            target = (len(maze_state.maze) - 1, len(maze_state.maze[0]) - 1)
+        if not self.chase or self.dead:
+            target = (len(maze_state._maze) - 1, len(maze_state._maze[0]) - 1)
         moves = {"NORTH": (-1, 0), "EAST": (0, 1),
                  "SOUTH": (1, 0), "WEST": (0, -1)}
         r, c = self.curr_pos
         reachable = [(r + dr, c + dc)
                      for m, (dr, dc) in moves.items()
-                     if self.can_move(m, maze_state.maze)]
+                     if self.can_move(m, maze_state._maze)]
         if len(reachable) > 1 and self.previous_pos in reachable:
             reachable.remove(self.previous_pos)
         if not reachable:
@@ -329,11 +370,11 @@ class Clyde(Ghost):
         moves = {"NORTH": (-1, 0), "EAST": (0, 1),
                  "SOUTH": (1, 0), "WEST": (0, -1)}
         r, c = self.curr_pos
-        if self.get_dist(target) < 8 or not self.chase:
-            target = (len(maze_state.maze) - 1, 0)
+        if self.get_dist(target) < 8 or not self.chase or self.dead:
+            target = (len(maze_state._maze) - 1, 0)
         reachable = [(r + dr, c + dc)
                      for m, (dr, dc) in moves.items()
-                     if self.can_move(m, maze_state.maze)]
+                     if self.can_move(m, maze_state._maze)]
         if len(reachable) > 1 and self.previous_pos in reachable:
             reachable.remove(self.previous_pos)
         if not reachable:

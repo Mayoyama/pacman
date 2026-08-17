@@ -122,8 +122,8 @@ class FrameBuffer:
         """
         self.snapshot = pygame.Surface((self.surf_w, self.surf_h),
                                        pygame.SRCALPHA, 32)
-        src = memoryview(self.surf.get_buffer())  # type: ignore[arg-type]
-        dst = memoryview(self.snapshot.get_buffer())  # type: ignore[arg-type]
+        src = memoryview(self.surf.get_buffer())
+        dst = memoryview(self.snapshot.get_buffer())
         dst[:] = src[:]
         src.release()
         dst.release()
@@ -142,7 +142,7 @@ class FrameBuffer:
         something still holds a buffer view into it.
         """
         self.data = memoryview(
-                    self.surf.get_buffer())  # type: ignore[arg-type]
+                    self.surf.get_buffer())
 
     def unlock_maze_memview(self) -> None:
         """Releases the direct pixel access opened by lock_maze_memview()."""
