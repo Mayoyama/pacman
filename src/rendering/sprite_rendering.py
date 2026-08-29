@@ -1,16 +1,19 @@
 from pathlib import Path
-from .rendering_utils import (cell_center, make_placeholder,
-                              load_image_or_fallback)
+from .rendering_utils import (
+    cell_center, make_placeholder, load_image_or_fallback, recolor_sprite,
+    build_colored_ghosts)
 from .settings import PixelMath, SpriteRenderState
 import pygame
 import math
+from sys import stderr
 
 
 class Sprites:
     """Loads sprite assets and recolors/draws them each frame."""
 
     def __init__(self, pixel_math: PixelMath,
-                 maze_offset: tuple[int, int]) -> None:
+                 maze_offset: tuple[int, int],
+                 ghosts: dict[str, tuple[int, int, int]]) -> None:
         """Loads every sprite asset, builds the per-direction pacman
         frame dict, and derives the frightened-ghost tints.
 
@@ -18,25 +21,32 @@ class Sprites:
             pixel_math: (cell_size, padding) shared rendering constants.
             maze_offset: (x, y) pixel offset centering the actual maze
                 within its (possibly larger) surface.
+            ghosts: Name-to-color map used to build the cached colored
+                ghost surfaces once, at startup.
         """
+
         self.cell_size = pixel_math.cell_size
         self.maze_offset = maze_offset
+
         self._load_sprites()
+
         self.pacsprite_dict = self._build_pacsprite_dict()
+
         self.deathsprite_list = [
             self.sprites_dict["pac_up_3"], self.sprites_dict["pac_death_1"],
             self.sprites_dict["pac_death_2"], self.sprites_dict["pac_death_3"],
             self.sprites_dict["pac_death_4"],
             self.sprites_dict["pac_death_blank"]]
 
-        self.colored_ghosts: dict[str, pygame.Surface] = {}
+        self.colored_ghosts: dict[str, pygame.surface.Surface] = \
+            build_colored_ghosts(
+                ghosts, self.sprites_dict["base_ghost"])
 
-        self.frightened_bright: pygame.Surface = \
-            self.apply_ghost_color(self.sprites_dict["base_ghost"],
-                                   (0, 0, 255))
-        self.frightened_dark: pygame.Surface = \
-            self.apply_ghost_color(self.sprites_dict["base_ghost"],
-                                   (0, 0, 140))
+        self.frightened_bright: pygame.surface.Surface = \
+            recolor_sprite(self.sprites_dict["base_ghost"], (0, 0, 255))
+
+        self.frightened_dark: pygame.surface.Surface = \
+            recolor_sprite(self.sprites_dict["base_ghost"], (0, 0, 140))
 
         # Pacman starts facing right, fully open
         self.last_openness: float = 1.0
@@ -56,14 +66,14 @@ class Sprites:
 
         ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
-        # ghost_placeholder must stay pure white - apply_ghost_color only
+        # ghost_placeholder must stay pure white - recolor_sprite only
         # recolors exact white pixels, so any other color would silently
         # mis-render every ghost.
         ghost_placeholder = make_placeholder((20, 20), (255, 255, 255))
         gummy_placeholder = make_placeholder((20, 20), (255, 255, 0))
         pacman_placeholder = make_placeholder((20, 20), (255, 255, 0))
 
-        self.sprites_dict: dict[str, pygame.Surface] = {}
+        self.sprites_dict: dict[str, pygame.surface.Surface] = {}
 
         specs = [
             ("pacgum", "pacgum.png", gummy_placeholder),
@@ -94,55 +104,10 @@ class Sprites:
             self.sprites_dict[f"pac_{direction}_1"] = \
                 self.sprites_dict["pac_closed"]
 
-
-
-    def apply_ghost_color(self, ghost_surf: pygame.Surface,
-                          color: tuple[int, int, int]) -> pygame.Surface:
-        """Returns a new surface: base's silhouette recolored to `color`.
-
-        Loops every pixel of `base`. Wherever its color is pure white,
-        writes `color` into the new surface at that pixel (keeping the
-        original alpha). Wherever alpha is zero, the new surface stays
-        transparent there (its default state).
-        """
-
-        new_surf = pygame.Surface(ghost_surf.get_size(), pygame.SRCALPHA, 32)
-        src = memoryview(ghost_surf.get_buffer())
-        dst = memoryview(new_surf.get_buffer())
-        pitch = ghost_surf.get_pitch()
-        w, h = ghost_surf.get_size()
-        for y in range(h):
-            for x in range(w):
-                offset = (y * pitch) + (x * 4)
-                b, g, r, a = src[offset:offset + 4]
-                if (r, g, b) == (255, 255, 255) and a != 0:
-                    dst[offset + 0] = color[2]
-                    dst[offset + 1] = color[1]
-                    dst[offset + 2] = color[0]
-                    dst[offset + 3] = a
-                else:
-                    dst[offset + 0] = b
-                    dst[offset + 1] = g
-                    dst[offset + 2] = r
-                    dst[offset + 3] = a
-        src.release()
-        dst.release()
-        return new_surf
-
-    def build_colored_ghosts(self,
-                             ghosts: dict[str, tuple[int, int, int]]) -> None:
-        """Builds and caches one recolored ghost surface per name.
-
-        Args:
-            ghosts: Name-to-RGB-color map, one entry per ghost.
-        """
-        for name, color in ghosts.items():
-            self.colored_ghosts[name] = \
-                self.apply_ghost_color(self.sprites_dict["base_ghost"], color)
-
     def _build_pacsprite_dict(
-            self) -> dict[str, tuple[pygame.Surface, pygame.Surface,
-                                     pygame.Surface]]:
+        self) -> dict[str, tuple[pygame.surface.Surface,
+                                 pygame.surface.Surface,
+                                 pygame.surface.Surface]]:
         """Builds the direction-keyed pacman animation-frame dict.
 
         Falls back to three copies of the closed frame for any
@@ -153,27 +118,32 @@ class Sprites:
             dict mapping "up"/"down"/"left"/"right" to that
             direction's (closed, half, open) frame tuple.
         """
-        pacsprites: dict[str, tuple[pygame.Surface, pygame.Surface,
-                                    pygame.Surface]] = {}
+
+        pacsprites: dict[str, tuple[pygame.surface.Surface,
+                                    pygame.surface.Surface,
+                                    pygame.surface.Surface]] = {}
+
         for direction in ("up", "down", "left", "right"):
             try:
-                sprites: tuple[pygame.Surface, pygame.Surface,
-                               pygame.Surface] = (
+                sprites: tuple[pygame.surface.Surface, pygame.surface.Surface,
+                               pygame.surface.Surface] = (
                     self.sprites_dict[f"pac_{direction}_1"],
                     self.sprites_dict[f"pac_{direction}_2"],
                     self.sprites_dict[f"pac_{direction}_3"]
                 )
             except KeyError:
                 print(f"_build_pacsprite_dict: pac_{direction} img not found."
-                      " Defaulting to pac_closed img")
+                      " Defaulting to pac_closed img", file=stderr)
                 sprites = (self.sprites_dict["pac_closed"],
                            self.sprites_dict["pac_closed"],
                            self.sprites_dict["pac_closed"])
+
             pacsprites[direction] = sprites
+
         return pacsprites
 
-    def render_sprites(self, target: pygame.Surface,
-                       maze_offset: pygame.Rect,
+    def render_sprites(self, target: pygame.surface.Surface,
+                       maze_offset: pygame.rect.Rect,
                        sprite_state: SpriteRenderState, died: bool,
                        death_step: int) -> None:
         """Draws gummies, pacman, and ghosts for one frame.
@@ -189,10 +159,8 @@ class Sprites:
                 collision counts as death).
             death_step: Which sprite in the death sequence is currently
                 showing, if died is True.
-
-        Frightened-state ghost tints (self.frightened_bright/_dark) are
-        not yet used here - still pending real frightened-state logic.
         """
+
         off_x, off_y = maze_offset.topleft
         pac_x, pac_y = sprite_state.pacpixel_pos
 
@@ -200,50 +168,60 @@ class Sprites:
             cx, cy = cell_center(r, c, self.cell_size, self.maze_offset)
             surf_mid = self.sprites_dict["superpacgum"].get_rect(
                 center=(cx + off_x, cy + off_y))
+
             target.blit(self.sprites_dict["superpacgum"], surf_mid)
 
         for r, c in sprite_state.pacgums:
             cx, cy = cell_center(r, c, self.cell_size, self.maze_offset)
             surf_mid = self.sprites_dict["pacgum"].get_rect(
                 center=(cx + off_x, cy + off_y))
+
             target.blit(self.sprites_dict["pacgum"], surf_mid)
 
         for name, surf in self.colored_ghosts.items():
             gx, gy = sprite_state.ghost_pos[name]
+
             if sprite_state.respawn_timers[name] > 0:
                 continue
             elif sprite_state.scared_timers[name] > 0:
-                if sprite_state.scared_timers[name] < 120:
+                if sprite_state.scared_timers[name] < 75:
                     cycle_frames = 10
                     fraction = ((sprite_state.scared_timers[name]
                                 % cycle_frames) / cycle_frames)
                     scared_math = math.sin(math.pi * fraction)
+
                     if scared_math < 2 / 5:
                         scared_frame = self.frightened_dark
                     elif scared_math < 4 / 5:
                         scared_frame = self.frightened_bright
                     else:
                         scared_frame = self.sprites_dict["base_ghost"]
+
                     surf_mid = scared_frame.get_rect(center=(gx + off_x,
                                                              gy + off_y))
                     target.blit(scared_frame, surf_mid)
                 else:
                     surf_mid = self.frightened_dark.get_rect(
                         center=(gx + off_x, gy + off_y))
+
                     target.blit(self.frightened_dark, surf_mid)
             else:
                 surf_mid = surf.get_rect(center=(gx + off_x, gy + off_y))
+
                 target.blit(surf, surf_mid)
 
         if sprite_state.player_direction != "paused":
             self.last_direction = sprite_state.player_direction
+
             px, py = sprite_state.pacpixel_pos
-            cx, cy = cell_center(*sprite_state.player_pos, self.cell_size,
-                                 self.maze_offset)
+            cx, cy = cell_center(
+                *sprite_state.player_pos, self.cell_size, self.maze_offset)
+
             distance = abs(px - cx) + abs(py - cy)
             fraction = ((self.cell_size - distance)
                         / (self.cell_size - sprite_state.tolerance))
             fraction = max(0.0, min(1.0, fraction))
+
             self.last_openness = math.sin(math.pi * fraction)
 
             if self.last_openness < 0.33:
@@ -252,7 +230,7 @@ class Sprites:
                 self.mouth_state = "half"
             else:
                 self.mouth_state = "open"
-        # else: leave last_openness frozen at whatever it was last
+            # else: leave last_openness frozen at whatever it was last
 
         if died:
             img = self.deathsprite_list[death_step]
@@ -260,5 +238,7 @@ class Sprites:
             mouth_index = {"closed": 0, "half": 1, "open": 2}
             img = self.pacsprite_dict[self.last_direction][
                 mouth_index[self.mouth_state]]
+
         surf_mid = img.get_rect(center=(pac_x + off_x, pac_y + off_y))
+
         target.blit(img, surf_mid)

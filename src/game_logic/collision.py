@@ -28,4 +28,5 @@ def check_collision(pos_a: tuple[int, int], pos_b: tuple[int, int],
         return True
     if abs(by - ay) < threshold and abs(bx - ax) <= alignment_tolerance:
         return True
+
     return False

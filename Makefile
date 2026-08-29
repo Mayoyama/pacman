@@ -21,7 +21,7 @@ install:
 		echo "installing importation $(WHL)"; \
 		uv pip install "$$WHL"; \
 	else \
-		echo -e "No whl file to import\n"; \
+		echo -e "\nWARNING: No whl file to import\n"; \
 	fi
 
 run:
@@ -29,7 +29,7 @@ run:
 	@uv run python3 pac-man.py $(ARGS)
 
 help:
-	@echo -e "To run the prgram:\n\t-> make run <configuration_file>"
+	@echo -e "To run the program:\n\t-> make run <configuration_file>"
 
 debug:
 	@echo "Debugging..."
@@ -41,17 +41,17 @@ clean_cache:
 
 lint:
 	@echo "Testing with 'flake8'..."
-	@python3 -m flake8 . --extend-exclude='*/bin/*,*/lib*/*'
-	@echo "Testing with 'mypy'..."
-	@python3 -m mypy . $(FLAGS) --exclude "venv/"
+	@uv run python -m flake8 . --extend-exclude='.venv'
+	@echo "Testing with 'mypy' flags..."
+	@uv run python -m mypy . $(FLAGS) --exclude '.venv'
 
 lint-strict:
 	@echo "Testing with 'flake8'..."
-	@python3 -m flake8 . --extend-exclude='*/bin/*,*/lib*/*'
-	@echo "Testing with 'mypy -strict'..."
-	@python3 -m mypy . -strict --exclude "venv/"
+	@uv run python -m flake8 . --extend-exclude='.venv'
+	@echo "Testing with 'mypy --strict'..."
+	@uv run python -m mypy . --strict --exclude '.venv'
 
 clean:
-	rm -rf src/__pycache__ src/*/__pycache__ .mypy_cache .pytest_cache
+	rm -rf __pycache__ src/__pycache__ src/*/__pycache__ .mypy_cache .pytest_cache
 
 .PHONY: all install run debug lint clean clean_cache lint-strict help

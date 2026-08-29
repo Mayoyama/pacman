@@ -5,10 +5,20 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mazegenerator",
     "pydantic>=2.13.4",
     "pygame>=2.6.1",
 ]
 
-[tool.uv.sources]
-mazegenerator = { path = "mazegenerator-2.1.0-py3-none-any.whl" }
+[[tool.mypy.overrides]]
+module = ["mazegenerator"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "src.game_logic.mazestate"
+warn_unused_ignores = false
+
+[dependency-groups]
+dev = [
+    "flake8",
+    "mypy",
+]

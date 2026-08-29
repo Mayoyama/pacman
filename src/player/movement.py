@@ -1,5 +1,4 @@
 from enum import Enum
-from sys import stderr
 
 
 class Direction(Enum):
@@ -27,40 +26,47 @@ class Movement:
                 within its (possibly larger) surface.
             cell_size: Width/height of one maze cell, in pixels.
         """
+
         self.cell_size = cell_size
         self.maze_offset = maze_offset
+
         self.maze = maze
+
         self.position: tuple[int, int] = start
         self.pixel_pos: tuple[int, int] = self.cell_center(*start)
+
         self.direction: Direction = Direction.PAUSED
         self.buffer_dir: Direction = Direction.PAUSED
+
         frames_per_cell = 8
-        if frames_per_cell < 2:
-            print("Invalid frames_per_cell (<2); using default of 12",
-                  file=stderr)
-            frames_per_cell = 12
+
         self.speed: int = max(1, self.cell_size // frames_per_cell)
+
         # self.tolerance: how close to a cell center counts as "centered"
         self.tolerance: int = 0
 
     @staticmethod
     def _has_N_wall(cell: int) -> bool:
         """Returns True/False whether the cell has a north wall"""
+
         return bool(cell & 1)
 
     @staticmethod
     def _has_E_wall(cell: int) -> bool:
         """Returns True/False whether the cell has a east wall"""
+
         return bool(cell & 2)
 
     @staticmethod
     def _has_S_wall(cell: int) -> bool:
         """Returns True/False whether the cell has a south wall"""
+
         return bool(cell & 4)
 
     @staticmethod
     def _has_W_wall(cell: int) -> bool:
         """Returns True/False whether the cell has a west wall"""
+
         return bool(cell & 8)
 
     def cell_to_pixel(self, r: int, c: int) -> tuple[int, int]:
@@ -74,9 +80,11 @@ class Movement:
             The (x, y) pixel coordinates of the cell's top-left corner,
             accounting for the image margin and cell size.
         """
+
         off_x, off_y = self.maze_offset
         x = off_x + (c * self.cell_size)
         y = off_y + (r * self.cell_size)
+
         return x, y
 
     def cell_center(self, r: int, c: int) -> tuple[int, int]:
@@ -89,7 +97,9 @@ class Movement:
         Returns:
             The (x, y) pixel coordinates of the cell's center point.
         """
+
         x, y = self.cell_to_pixel(r, c)
+
         return x + self.cell_size // 2, y + self.cell_size // 2
 
     def can_move(self, direction: Direction) -> bool:
@@ -101,6 +111,7 @@ class Movement:
         Returns:
             True if movement in valid, False otherwise.
         """
+
         r, c = self.position[0], self.position[1]
         match direction:
             case Direction.UP:
@@ -124,7 +135,20 @@ class Movement:
         Args:
             direction: The direction requested.
         """
+
         self.buffer_dir = direction
+
+    def respawn(self, start: tuple[int, int]) -> None:
+        """Resets position/direction back to a starting cell after death.
+
+        Args:
+            start: The (row, col) cell to respawn at.
+        """
+
+        self.direction = Direction.PAUSED
+        self.buffer_dir = Direction.PAUSED
+        self.position = start
+        self.pixel_pos = self.cell_center(*start)
 
     def is_centered(self) -> bool:
         """Checks whether pixel_pos is within tolerance of the current
@@ -134,10 +158,13 @@ class Movement:
             True if close enough to cell_center(*self.cell) to be
             considered aligned, False otherwise.
         """
+
         px, py = self.pixel_pos
         cx, cy = self.cell_center(*self.position)
+
         if abs(px - cx) <= self.tolerance and abs(py - cy) <= self.tolerance:
             return True
+
         return False
 
     def update(self) -> None:
@@ -156,8 +183,10 @@ class Movement:
 
             if self.direction != Direction.PAUSED:
                 self.position = self._next_cell(self.direction)
+
         else:
             x, y = self.pixel_pos
+
             if self.direction == Direction.UP:
                 self.pixel_pos = (x, y - self.speed)
             elif self.direction == Direction.DOWN:
@@ -176,7 +205,9 @@ class Movement:
         Returns:
             The (row, col) of the neighboring cell.
         """
+
         r, c = self.position
+
         if direction == Direction.UP:
             return (r - 1, c)
         elif direction == Direction.DOWN:
@@ -185,4 +216,5 @@ class Movement:
             return (r, c - 1)
         elif direction == Direction.RIGHT:
             return (r, c + 1)
+
         return (r, c)
