@@ -42,7 +42,10 @@ def write_scores(filename: str, player: Any, level: int) -> None:
             score=player.score,
             level=level
         )
-        scores = json.loads(content)
+        if not content.strip():
+            scores = []
+        else:
+            scores = json.loads(content)
         scores.append(score.model_dump())
         scores.sort(key=lambda score: score["score"], reverse=True)
         with open(filename, "w") as file:

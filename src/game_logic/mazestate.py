@@ -11,8 +11,8 @@ import contextlib
 try:
     from mazegenerator import MazeGenerator
 except ImportError:
-    print("No import of mazegenerator found", file=sys.stderr)
-    sys.exit(1)
+    print("STOP: No import of mazegenerator found", file=sys.stderr)
+    sys.exit(0)
 
 
 class _FilterStream:

@@ -28,6 +28,12 @@ run:
 	@echo -e "Project launching...\n"
 	@uv run python3 pac-man.py $(ARGS)
 
+packaging:
+	@echo -e "Creating packaging...\n"
+	@uv build
+	@mv dist/pacman* .
+	@rm -rf dist
+
 help:
 	@echo -e "To run the program:\n\t-> make run <configuration_file>"
 
@@ -54,4 +60,4 @@ lint-strict:
 clean:
 	rm -rf __pycache__ src/__pycache__ src/*/__pycache__ .mypy_cache .pytest_cache
 
-.PHONY: all install run debug lint clean clean_cache lint-strict help
+.PHONY: all install run debug lint clean clean_cache lint-strict help packaging

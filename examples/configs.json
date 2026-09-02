@@ -1,0 +1,68 @@
+{
+  "highscore_filename": "best_scores.json",
+  #not more than 100
+  "pacgum": 100,
+  #not more than 15
+  "points_per_pacgum": 10,
+  #not more than 50
+  "points_per_super_pacgum": 50,
+  #not more than 200
+  "points_per_ghost": 200,
+  #not mandatory
+  "seed": 42,
+  #not more than 1000
+  "level_max_time": 90,
+  #width and height must be between 10 and 30
+  "levels": [
+    {
+      "level_id": 1,
+      "width": 10,
+      "height": 10
+    },
+    {
+      "level_id": 2,
+      "width": 13,
+      "height": 10
+    },
+    {
+      "level_id": 3,
+      "width": 12,
+      "height": 14
+    },
+    {
+      "level_id": 4,
+      "width": 14,
+      "height": 16
+    },
+    {
+      "level_id": 5,
+      "width": 19,
+      "height": 15
+    },
+    {
+      "level_id": 6,
+      "width": 14,
+      "height": 18
+    },
+    {
+      "level_id": 7,
+      "width": 11,
+      "height": 17
+    },
+    {
+      "level_id": 8,
+      "width": 17,
+      "height": 11
+    },
+    {
+      "level_id": 9,
+      "width": 20,
+      "height": 24
+    },
+    {
+      "level_id": 10,
+      "width": 30,
+      "height": 30
+    }
+  ]
+}
